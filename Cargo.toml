@@ -1,0 +1,15 @@
+[package]
+name = "egui-spreadsheet"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+egui = "0.26"
+slab = "0.4"
+egui_extras = { version = "0.26", default-features = false }
+indexmap = "2"
+
+[dev-dependencies]
+eframe = { version = "0.26", features = ["serde", "persistence"] }
