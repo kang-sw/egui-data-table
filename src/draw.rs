@@ -1,21 +1,21 @@
-pub mod viewer;
-
-use std::{any::Any, collections::VecDeque, sync::Arc};
+use std::{any::Any, collections::VecDeque, mem::replace, sync::Arc};
 
 use egui::{mutex::Mutex, RichText};
 use egui_extras::Column;
 use indexmap::IndexSet;
 
-use crate::{RowSlotId, Spreadsheet};
-pub use viewer::RowViewer;
+use crate::{viewer::RowViewer, Spreadsheet};
 
 use format as f;
 
 /* ------------------------------------------ Indexing ------------------------------------------ */
 
 type ColumnIndex = usize;
+type RowIndex = usize;
 type LinearCellIndex = usize;
 type AnyRowValue = Box<dyn Any + Send>;
+
+struct IsAscending(bool);
 
 #[derive(Default)]
 struct UiState {
@@ -29,7 +29,7 @@ struct UiState {
     visible_cols: Vec<ColumnIndex>,
 
     /// Sort option - column index and direction.
-    sort_by: Option<ColumnIndex>,
+    sort_by: Option<(ColumnIndex, IsAscending)>,
 
     /// Row selections.
     selections: IndexSet<LinearCellIndex>,
@@ -53,7 +53,7 @@ struct UiState {
 
     */
     /// Cached rows.
-    cc_rows: Vec<(RowSlotId, f32)>,
+    cc_rows: Vec<(RowIndex, f32)>,
 
     /// Spreadsheet is modified during the last validation.
     cc_dirty: bool,
@@ -77,11 +77,34 @@ impl UiState {
     }
 
     fn validate_cc<R: Send, V: RowViewer<R>>(&mut self, sheet: &mut Spreadsheet<R>, vwr: &mut V) {
-        if !self.cc_dirty {
+        if !replace(&mut self.cc_dirty, false) {
             return;
         }
 
+        // TODO: Boost performance with `rayon`
+
         // We should validate the entire cache.
+        let mut it_all_rows = sheet
+            .iter()
+            .enumerate()
+            .filter_map(|(i, x)| vwr.filter_row(x).then_some(i));
+
+        for (idx, (cc_row, _)) in self.cc_rows.iter_mut().enumerate() {
+            let Some(row) = it_all_rows.next() else {
+                // Clear the rest of the cache.
+                self.cc_rows.drain(idx..);
+                break;
+            };
+
+            *cc_row = row;
+        }
+
+        // If there are more rows left, we should add them.
+        for row in it_all_rows {
+            self.cc_rows.push((row, 10.)); // Just neat default value.
+        }
+
+        // TODO: Sort by column
     }
 }
 
@@ -124,18 +147,32 @@ impl<R: Send> Spreadsheet<R> {
         let mut undo = false;
         let mut redo = false;
 
-        egui_extras::TableBuilder::new(ui)
-            .column(Column::auto().resizable(false))
-            .columns(Column::auto().resizable(true), s.visible_cols.len())
+        let mut builder =
+            egui_extras::TableBuilder::new(ui).column(Column::auto().resizable(false));
+
+        for column in 0..s.num_columns {
+            builder = builder.column(viewer.column_config(column));
+        }
+
+        builder
+            .column(Column::remainder())
             .drag_to_scroll(false) // Drag is used for selection
             .striped(true)
             .sense(egui::Sense::click_and_drag())
+            .max_scroll_height(f32::MAX)
             .header(20., |mut h| {
+                h.col(|ui| {
+                    // TODO: Button to pop up context menu.
+                });
+
                 for &col in &s.visible_cols {
                     h.col(|ui| {
                         ui.label(viewer.column_name(col));
                     });
                 }
+
+                // Remainder
+                h.col(|_| {});
             })
             .body(|body| {
                 // Validate ui state. Defer this as late as possible; since it may not be
@@ -151,9 +188,9 @@ impl<R: Send> Spreadsheet<R> {
                     // Render row header button
                     let (mut rect, mut resp) = row.col(|ui| {
                         ui.horizontal(|ui| {
-                            ui.label(RichText::from(f!("{row_slot_id}")).monospace().strong());
+                            ui.label(RichText::from(f!("{}", row_index + 1)).monospace().weak());
                             ui.add_space(0.);
-                            ui.label(RichText::from(f!("({row_index})")).monospace().weak());
+                            ui.label(RichText::from(f!("{row_slot_id}")).monospace().strong());
                         });
                     });
 
@@ -191,6 +228,9 @@ impl<R: Send> Spreadsheet<R> {
                     if row_height_prev != max_cell_height {
                         row_len_updates.push((row_index, max_cell_height));
                     }
+
+                    // Remainder
+                    row.col(|_| {});
                 });
 
                 // Update height caches

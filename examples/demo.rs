@@ -1,8 +1,8 @@
 use std::iter::repeat_with;
 
-use egui_spreadsheet::ui::RowViewer;
+use egui_spreadsheet::RowViewer;
 
-/* ----------------------------------------- Data Types ----------------------------------------- */
+/* ----------------------------------------- Data Scheme ---------------------------------------- */
 
 struct Viewer;
 
@@ -110,7 +110,9 @@ impl Default for DemoApp {
 
 impl DemoApp {
     fn tick(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| self.sheet.show(ui, "asdF", &mut Viewer));
+        egui::CentralPanel::default().show(ctx, |ui| {
+            self.sheet.show(ui, "asdF", &mut Viewer);
+        });
     }
 }
 

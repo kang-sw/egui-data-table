@@ -1,3 +1,6 @@
+pub use egui_extras::Column as TableColumnConfig;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum UiAction {
     ActivateSelectedCell,
     CancelEdit,
@@ -6,10 +9,23 @@ pub enum UiAction {
     Redo,
 }
 
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CellEditState {
+    #[default]
+    Disabled,
+    JustEnabled,
+    Enabled,
+}
+
 pub trait RowViewer<R: Send> {
     fn num_columns(&mut self) -> usize;
 
     fn column_name(&mut self, column: usize) -> &str;
+
+    fn column_config(&mut self, column: usize) -> TableColumnConfig {
+        let _ = column;
+        TableColumnConfig::auto().resizable(true)
+    }
 
     fn is_sortable_column(&mut self, column: usize) -> bool;
 
@@ -53,7 +69,11 @@ pub trait RowViewer<R: Send> {
     }
 
     fn detect_hotkey(&mut self, ui: &egui::InputState) -> Option<UiAction> {
-        // TODO: F2, Ctrl+C, Ctrl+V, Ctrl+D, Ctrl+E
-        None
+        self::detect_hotkey_excel(ui)
     }
+}
+
+pub fn detect_hotkey_excel(input: &egui::InputState) -> Option<UiAction> {
+    // TODO
+    None
 }

@@ -1,12 +1,13 @@
 use std::{collections::VecDeque, sync::atomic::AtomicU64};
 
-pub mod ui;
+pub mod draw;
+pub mod viewer;
+
+pub use viewer::{RowViewer, UiAction};
 
 /* ---------------------------------------------------------------------------------------------- */
 /*                                           CORE CLASS                                           */
 /* ---------------------------------------------------------------------------------------------- */
-
-type RowSlotId = usize;
 
 /// Prevents direct modification of `Vec`
 #[derive(Debug, Clone)]
@@ -63,14 +64,14 @@ impl<R> Spreadsheet<R> {
         std::mem::take(&mut self.rows)
     }
 
-    pub fn replace(&mut self, mut new: VecDeque<R>) -> VecDeque<R> {
+    pub fn replace(&mut self, new: VecDeque<R>) -> VecDeque<R> {
         std::mem::replace(&mut self.rows, new)
     }
 
     pub fn retain(&mut self, mut f: impl FnMut(&R) -> bool) {
         let mut removed_any = false;
         self.rows.retain(|row| {
-            let retain = f(&row);
+            let retain = f(row);
             removed_any |= !retain;
             retain
         });
