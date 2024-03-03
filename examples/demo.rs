@@ -19,7 +19,9 @@ enum Grade {
 /* ------------------------------------ Viewer Implementation ----------------------------------- */
 
 impl RowViewer<Row> for Viewer {
-    const COLUMNS: usize = 4;
+    fn num_columns(&mut self) -> usize {
+        4
+    }
 
     fn column_name(&mut self, column: usize) -> &str {
         ["Name", "Age", "Is Student", "Grade"][column]

@@ -1,6 +1,4 @@
-use std::sync::atomic::AtomicU64;
-
-use slab::Slab;
+use std::{collections::VecDeque, sync::atomic::AtomicU64};
 
 pub mod ui;
 
@@ -17,17 +15,8 @@ pub struct Spreadsheet<R> {
     /// process run..
     unique_id: u64,
 
-    /// Next row ID to be allocated
-    row_id_gen: u64,
-
     /// Efficient row data storage
-    rows: Slab<RowSlot<R>>,
-}
-
-#[derive(Debug, Clone)]
-struct RowSlot<R> {
-    id: u64,
-    data: R,
+    rows: VecDeque<R>,
 }
 
 fn alloc_id() -> u64 {
@@ -39,7 +28,6 @@ impl<R> Default for Spreadsheet<R> {
     fn default() -> Self {
         Self {
             unique_id: alloc_id(),
-            row_id_gen: 0,
             rows: Default::default(),
         }
     }
@@ -47,22 +35,9 @@ impl<R> Default for Spreadsheet<R> {
 
 impl<R> FromIterator<R> for Spreadsheet<R> {
     fn from_iter<T: IntoIterator<Item = R>>(iter: T) -> Self {
-        let mut row_id_gen = 0;
-        let rows = Slab::from_iter(iter.into_iter().enumerate().map(|(id, data)| {
-            row_id_gen = id as u64;
-            (
-                id,
-                RowSlot {
-                    id: row_id_gen,
-                    data,
-                },
-            )
-        }));
-
         Self {
             unique_id: alloc_id(),
-            row_id_gen,
-            rows,
+            rows: iter.into_iter().collect(),
         }
     }
 }
@@ -80,20 +55,22 @@ impl<R> Spreadsheet<R> {
         self.rows.is_empty()
     }
 
-    pub fn dump(&self) -> Vec<&R> {
-        let mut slots = Vec::from_iter(self.rows.iter().map(|(_, row)| row));
-        slots.sort_by_key(|row| row.id);
-        slots.into_iter().map(|row| &row.data).collect()
+    pub fn iter(&self) -> impl Iterator<Item = &R> {
+        self.rows.iter()
     }
 
-    pub fn compact(&mut self) {
-        // TODO: Compact slab, indices, reassign unique_id.
+    pub fn take(&mut self) -> VecDeque<R> {
+        std::mem::take(&mut self.rows)
+    }
+
+    pub fn replace(&mut self, mut new: VecDeque<R>) -> VecDeque<R> {
+        std::mem::replace(&mut self.rows, new)
     }
 
     pub fn retain(&mut self, mut f: impl FnMut(&R) -> bool) {
         let mut removed_any = false;
-        self.rows.retain(|_, row| {
-            let retain = f(&row.data);
+        self.rows.retain(|row| {
+            let retain = f(&row);
             removed_any |= !retain;
             retain
         });
@@ -102,12 +79,6 @@ impl<R> Spreadsheet<R> {
             self.unique_id = alloc_id();
         }
     }
-
-    fn push_inner(&mut self, row: R) -> RowSlotId {
-        let id = self.row_id_gen;
-        self.row_id_gen += 1;
-        self.rows.insert(RowSlot { id, data: row })
-    }
 }
 
 impl<R> Extend<R> for Spreadsheet<R> {
@@ -115,9 +86,6 @@ impl<R> Extend<R> for Spreadsheet<R> {
     fn extend<T: IntoIterator<Item = R>>(&mut self, iter: T) {
         // Invalidate the cache
         self.unique_id = alloc_id();
-
-        for row in iter {
-            self.push_inner(row);
-        }
+        self.rows.extend(iter);
     }
 }

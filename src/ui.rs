@@ -1,112 +1,87 @@
-use std::{any::Any, num::NonZeroUsize, sync::Arc};
+pub mod viewer;
 
-use egui::mutex::Mutex;
+use std::{any::Any, collections::VecDeque, sync::Arc};
+
+use egui::{mutex::Mutex, RichText};
 use egui_extras::Column;
 use indexmap::IndexSet;
 
 use crate::{RowSlotId, Spreadsheet};
+pub use viewer::RowViewer;
 
-pub enum UiAction {
-    ActivateSelectedCell,
-    CancelEdit,
-    CommitEdit,
-    Undo,
-    Redo,
-}
-
-pub trait RowViewer<R: Send> {
-    /// Number of columns
-    const COLUMNS: usize;
-
-    fn column_name(&mut self, column: usize) -> &str;
-
-    fn is_sortable_column(&mut self, column: usize) -> bool;
-
-    fn compare_column(&mut self, row_l: &R, row_r: &R, column: usize) -> std::cmp::Ordering;
-
-    /// Should return true if the column is modified. Otherwise, it won't be updated.
-    ///
-    /// When it's activated, the `active` flag is set to true. You can utilize this to
-    /// expand editor, show popup, etc.
-    fn draw_column_edit(&mut self, ui: &mut egui::Ui, row: &mut R, column: usize, active: bool);
-
-    fn empty_row(&mut self) -> R;
-
-    fn clone_column(&mut self, src: &R, dst: &mut R, column: usize);
-
-    fn clone_column_arbitrary(
-        &mut self,
-        src: &R,
-        src_column: usize,
-        dst: &mut R,
-        dst_column: usize,
-    ) -> bool {
-        debug_assert!(src_column != dst_column);
-        let _ = (src, dst, src_column, dst_column);
-
-        // Simply does not support arbitrary column cloning.
-        false
-    }
-
-    fn clone_column_smart(&mut self, src: &R, dst: &mut R, column: usize, offset: usize) {
-        let _ = offset;
-        self.clone_column(src, dst, column);
-    }
-
-    fn clone_row(&mut self, src: &R) -> R;
-
-    fn clear_column(&mut self, row: &mut R, column: usize);
-
-    fn detect_hotkey(&mut self, ui: &egui::InputState) -> Option<UiAction> {
-        // TODO: F2, Ctrl+C, Ctrl+V, Ctrl+D, Ctrl+E
-        None
-    }
-}
+use format as f;
 
 /* ------------------------------------------ Indexing ------------------------------------------ */
 
-type VisibleRowIndex = usize;
-type VisibleColumnIndex = usize;
+type ColumnIndex = usize;
+type LinearCellIndex = usize;
+type AnyRowValue = Box<dyn Any + Send>;
 
 #[derive(Default)]
 struct UiState {
+    /// Cached sheet id. If sheet id mismatches, the UiState is invalidated.
     sheet_id: u64,
 
-    visible_cols: Vec<usize>,
-    visible_rows: Vec<(RowSlotId, f32)>,
+    /// Cached number of columns.
+    num_columns: usize,
 
-    /// Sorting column
-    sort_by: Option<NonZeroUsize>,
+    /// Visible columns selected by user.
+    visible_cols: Vec<ColumnIndex>,
+
+    /// Sort option - column index and direction.
+    sort_by: Option<ColumnIndex>,
 
     /// Row selections.
-    selections: IndexSet<usize>,
+    selections: IndexSet<LinearCellIndex>,
 
     /// When activated, previous row value is cached here
     ///
     /// TODO: undo / redo
     active_cell_source_value: Option<Box<dyn Any + Send>>,
 
-    /// Spreadsheet is modified during
-    is_invalid: bool,
+    /// Any modification is stored here. We assume this is transient(putting this as field
+    /// of UiState), as it's brittle to external modification to the spreadsheet.
+    undo_stack: VecDeque<Command>,
+
+    /// Any redo will push back to undo stack. This will be cleared when any modification
+    /// is made.
+    redo_stack: Vec<Command>,
+
+    /*
+
+        SECTION: Cache - Rendering
+
+    */
+    /// Cached rows.
+    cc_rows: Vec<(RowSlotId, f32)>,
+
+    /// Spreadsheet is modified during the last validation.
+    cc_dirty: bool,
 }
 
-enum HistoryArg {}
+#[derive(Clone)]
+enum Command {}
 
 impl UiState {
-    fn clear(&mut self, id: u64, n_column: usize) {
-        // Clear the cache
-        self.sheet_id = id;
-        self.is_invalid = true;
-    }
-
-    fn column(&self, column: usize) -> Option<usize> {
-        todo!()
-    }
-
-    fn validate<R: Send, V: RowViewer<R>>(&mut self, sheet: &mut Spreadsheet<R>, vwr: &mut V) {
-        if !self.is_invalid {
+    fn validate_identity(&mut self, id: u64, num_columns: usize) {
+        if self.sheet_id == id && self.num_columns == num_columns {
             return;
         }
+
+        // Clear the cache
+        *self = Default::default();
+        self.sheet_id = id;
+        self.cc_dirty = true;
+        self.num_columns = num_columns;
+        self.visible_cols.extend(0..num_columns);
+    }
+
+    fn validate_cc<R: Send, V: RowViewer<R>>(&mut self, sheet: &mut Spreadsheet<R>, vwr: &mut V) {
+        if !self.cc_dirty {
+            return;
+        }
+
+        // We should validate the entire cache.
     }
 }
 
@@ -120,17 +95,16 @@ impl<R: Send> Spreadsheet<R> {
     /// invalidate the index table cache which results in a performance hit.
     pub fn show<V>(&mut self, ui: &mut egui::Ui, ui_id: impl Into<egui::Id>, viewer: &mut V)
     where
+        R: Send,
         V: RowViewer<R>,
     {
         let ui_id = ui_id.into();
         let ui_state_ptr = ui
             .memory(|x| x.data.get_temp::<Arc<Mutex<UiState>>>(ui_id))
             .unwrap_or_default();
-        let mut ui_state = ui_state_ptr.lock();
 
-        if ui_state.sheet_id != self.unique_id || ui_state.visible_cols.len() != V::COLUMNS {
-            ui_state.clear(self.unique_id, V::COLUMNS);
-        }
+        let mut ui_state = ui_state_ptr.lock();
+        ui_state.validate_identity(self.unique_id, viewer.num_columns());
 
         ui.push_id(ui_id, |ui| {
             self.show_impl(ui, &mut ui_state, viewer);
@@ -143,11 +117,19 @@ impl<R: Send> Spreadsheet<R> {
 
     fn show_impl<V>(&mut self, ui: &mut egui::Ui, s: &mut UiState, viewer: &mut V)
     where
+        R: Send,
         V: RowViewer<R>,
     {
+        let mut added_commands = Vec::<Command>::new();
+        let mut undo = false;
+        let mut redo = false;
+
         egui_extras::TableBuilder::new(ui)
+            .column(Column::auto().resizable(false))
             .columns(Column::auto().resizable(true), s.visible_cols.len())
             .drag_to_scroll(false) // Drag is used for selection
+            .striped(true)
+            .sense(egui::Sense::click_and_drag())
             .header(20., |mut h| {
                 for &col in &s.visible_cols {
                     h.col(|ui| {
@@ -156,40 +138,65 @@ impl<R: Send> Spreadsheet<R> {
                 }
             })
             .body(|body| {
-                // Validate ui state
-                s.validate(self, viewer);
+                // Validate ui state. Defer this as late as possible; since it may not be
+                // called if the table area is out of the visible space.
+                s.validate_cc(self, viewer);
 
                 let mut row_len_updates = Vec::new();
 
-                body.heterogeneous_rows(s.visible_rows.iter().map(|(_, a)| *a), |mut row| {
+                body.heterogeneous_rows(s.cc_rows.iter().map(|(_, a)| *a), |mut row| {
                     let row_index = row.index();
-                    let (row_slot_id, row_height_prev) = s.visible_rows[row_index];
+                    let (row_slot_id, row_height_prev) = s.cc_rows[row_index];
+
+                    // Render row header button
+                    let (mut rect, mut resp) = row.col(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::from(f!("{row_slot_id}")).monospace().strong());
+                            ui.add_space(0.);
+                            ui.label(RichText::from(f!("({row_index})")).monospace().weak());
+                        });
+                    });
+
+                    // Refresh height of the row.
+                    let mut max_cell_height = rect.height();
 
                     for &col in &s.visible_cols {
                         let linear_index = row_index * s.visible_cols.len() + col;
-                        let is_col_selected = is_row_selected && s.selected_cols.contains(&col);
+                        let selected = s.selections.contains(&linear_index);
+                        let is_active = s.active_cell_source_value.is_some()
+                            && selected
+                            && s.selections.first() == Some(&linear_index);
 
-                        let (rect, resp) = row.col(|ui| {
-                            viewer.draw_column_edit(
-                                ui,
-                                &mut self.rows[row_slot_id].data,
-                                col,
-                                todo!(),
-                            );
+                        row.set_selected(selected);
+
+                        (rect, resp) = row.col(|ui| {
+                            ui.add_enabled_ui(is_active, |ui| {
+                                viewer.draw_column_edit(
+                                    ui,
+                                    &mut self.rows[row_slot_id],
+                                    col,
+                                    is_active,
+                                );
+                            });
                         });
 
-                        if row_height_prev != rect.height() {
-                            row_len_updates.push((row_index, rect.height()));
-                        }
+                        max_cell_height = rect.height().max(max_cell_height);
+
+                        // TODO: Create actions from response.
+                        // - Highlight on click
+                        // - Ctrl + Click, Shift + Click, Ctrl + A, Drag.
+                        // -
                     }
 
-                    todo!();
+                    if row_height_prev != max_cell_height {
+                        row_len_updates.push((row_index, max_cell_height));
+                    }
                 });
 
                 // Update height caches
 
                 for (row_index, row_height) in row_len_updates {
-                    s.visible_rows[row_index].1 = row_height;
+                    s.cc_rows[row_index].1 = row_height;
                 }
             });
     }

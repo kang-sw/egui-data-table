@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 egui = "0.26"
-slab = "0.4"
 egui_extras = { version = "0.26", default-features = false }
 indexmap = "2"
 
