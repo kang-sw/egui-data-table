@@ -1,5 +1,5 @@
 [package]
-name = "egui-spreadsheet"
+name = "egui-data-table"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,7 +10,9 @@ edition = "2021"
 egui = "0.26"
 egui_extras = { version = "0.26", default-features = false }
 indexmap = "2"
-tap = "1"                                                    # for developer qol ...
+tap = "1"
 
 [dev-dependencies]
 eframe = { version = "0.26", features = ["serde", "persistence"] }
+fastrand = "2"
+names = { version = "0.14", default-features = false }

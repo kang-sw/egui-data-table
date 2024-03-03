@@ -1,15 +1,19 @@
 use std::iter::repeat_with;
 
-use egui_spreadsheet::{viewer::CellUiState, RowViewer};
+use egui_data_table::RowViewer;
+use tap::prelude::Pipe;
 
 /* ----------------------------------------- Data Scheme ---------------------------------------- */
 
 #[derive(Hash)]
-struct Viewer;
+struct Viewer {
+    filter: String,
+}
 
+#[derive(Debug, Clone)]
 struct Row(String, i32, bool, Grade);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Grade {
     A,
     B,
@@ -20,23 +24,29 @@ enum Grade {
 /* ------------------------------------ Viewer Implementation ----------------------------------- */
 
 impl RowViewer<Row> for Viewer {
-    fn num_columns(&mut self) -> usize {
+    fn num_columns(&self) -> usize {
         4
     }
 
-    fn column_name(&mut self, column: usize) -> &str {
+    fn column_name(&self, column: usize) -> &str {
         ["Name", "Age", "Is Student", "Grade"][column]
     }
 
-    fn is_sortable_column(&mut self, column: usize) -> bool {
-        [true, true, true, false][column]
+    fn is_sortable_column(&self, column: usize) -> bool {
+        [true, true, false, true][column]
     }
 
-    fn compare_column(&mut self, row_l: &Row, row_r: &Row, column: usize) -> std::cmp::Ordering {
+    fn compare_column_for_sort(
+        &self,
+        row_l: &Row,
+        row_r: &Row,
+        column: usize,
+    ) -> std::cmp::Ordering {
         match column {
             0 => row_l.0.cmp(&row_r.0),
             1 => row_l.1.cmp(&row_r.1),
-            2 => row_l.2.cmp(&row_r.2),
+            2 => unreachable!(),
+            3 => row_l.3.cmp(&row_r.3),
             _ => unreachable!(),
         }
     }
@@ -45,7 +55,7 @@ impl RowViewer<Row> for Viewer {
         Row("".to_string(), 0, false, Grade::F)
     }
 
-    fn clone_column(&mut self, src: &Row, dst: &mut Row, column: usize) {
+    fn set_column_value(&mut self, src: &Row, dst: &mut Row, column: usize) {
         match column {
             0 => dst.0 = src.0.clone(),
             1 => dst.1 = src.1,
@@ -53,10 +63,6 @@ impl RowViewer<Row> for Viewer {
             3 => dst.3 = src.3,
             _ => unreachable!(),
         }
-    }
-
-    fn clone_row(&mut self, src: &Row) -> Row {
-        Row(src.0.clone(), src.1, src.2, src.3)
     }
 
     fn clear_column(&mut self, row: &mut Row, column: usize) {
@@ -69,50 +75,131 @@ impl RowViewer<Row> for Viewer {
         }
     }
 
-    fn draw_cell(&mut self, ui: &mut egui::Ui, row: &mut Row, column: usize, _: CellUiState) {
+    fn cell_view(&mut self, ui: &mut egui::Ui, row: &Row, column: usize) {
         match column {
             0 => {
-                ui.text_edit_singleline(&mut row.0);
+                ui.label(&row.0);
             }
             1 => {
-                ui.add(egui::widgets::DragValue::new(&mut row.1).speed(1.0));
+                ui.label(&row.1.to_string());
             }
             2 => {
-                ui.checkbox(&mut row.2, "");
+                row.2.pipe(|mut x| ui.checkbox(&mut x, ""));
             }
             3 => {
-                ui.horizontal(|ui| {
-                    ui.radio_value(&mut row.3, Grade::A, "A");
-                    ui.radio_value(&mut row.3, Grade::B, "B");
-                    ui.radio_value(&mut row.3, Grade::C, "C");
-                    ui.radio_value(&mut row.3, Grade::F, "F");
+                ui.label(match row.3 {
+                    Grade::A => "A",
+                    Grade::B => "B",
+                    Grade::C => "C",
+                    Grade::F => "F",
                 });
             }
             _ => unreachable!(),
         }
+    }
+
+    fn cell_edit(
+        &mut self,
+        ui: &mut egui::Ui,
+        row: &mut Row,
+        column: usize,
+        focus_column: Option<usize>,
+    ) -> Option<bool> {
+        match column {
+            0 => {
+                egui::TextEdit::multiline(&mut row.0)
+                    .desired_rows(1)
+                    .code_editor()
+                    .show(ui)
+                    .response
+            }
+            1 => ui.add(egui::DragValue::new(&mut row.1).speed(1.0)),
+            2 => ui.checkbox(&mut row.2, ""),
+            3 => {
+                let grade = &mut row.3;
+                ui.horizontal_wrapped(|ui| {
+                    ui.radio_value(grade, Grade::A, "A")
+                        | ui.radio_value(grade, Grade::B, "B")
+                        | ui.radio_value(grade, Grade::C, "C")
+                        | ui.radio_value(grade, Grade::F, "F")
+                })
+                .inner
+            }
+            _ => unreachable!(),
+        }
+        .pipe(|resp| {
+            if focus_column.is_some_and(|x| x == column) {
+                resp.request_focus()
+            }
+        });
+
+        // Just let the upstream control focuses
+        None
+    }
+
+    fn filter_row(&self, row: &Row) -> bool {
+        row.0.contains(&self.filter)
+    }
+
+    fn has_row_filter(&self) -> bool {
+        true
     }
 }
 
 /* ------------------------------------------ View Loop ----------------------------------------- */
 
 struct DemoApp {
-    sheet: egui_spreadsheet::Spreadsheet<Row>,
+    sheet: egui_data_table::Spreadsheet<Row>,
+    viewer: Viewer,
 }
 
 impl Default for DemoApp {
     fn default() -> Self {
         Self {
-            sheet: repeat_with(|| Row("".to_string(), 0, false, Grade::F))
-                .take(100)
-                .collect(),
+            sheet: {
+                let mut rng = fastrand::Rng::new();
+                let mut name_gen = names::Generator::with_naming(names::Name::Numbered);
+
+                repeat_with(move || {
+                    Row(
+                        name_gen.next().unwrap(),
+                        rng.i32(4..31),
+                        rng.bool(),
+                        match rng.i32(0..=3) {
+                            0 => Grade::A,
+                            1 => Grade::B,
+                            2 => Grade::C,
+                            _ => Grade::F,
+                        },
+                    )
+                })
+            }
+            .take(100000)
+            .collect(),
+            viewer: Viewer {
+                filter: String::new(),
+            },
         }
     }
 }
 
 impl DemoApp {
-    fn tick(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn tick(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        egui::TopBottomPanel::top("MenuBar").show(ctx, |ui| {
+            egui::menu::bar(ui, |ui| {
+                egui::widgets::global_dark_light_mode_buttons(ui);
+
+                ui.separator();
+
+                ui.label("Name Filter");
+                ui.text_edit_singleline(&mut self.viewer.filter);
+            })
+        });
+
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.sheet.show(ui, "asdF", &mut Viewer);
+            ui.style_mut().debug.debug_on_hover_with_all_modifiers = true;
+
+            egui_data_table::Renderer::new(&mut self.sheet, &mut self.viewer).show(ui);
         });
     }
 }
@@ -125,6 +212,7 @@ fn main() {
         "Spreadsheet Demo",
         eframe::NativeOptions {
             default_theme: eframe::Theme::Dark,
+            centered: true,
 
             ..Default::default()
         },

@@ -3,33 +3,39 @@ use std::{collections::VecDeque, sync::atomic::AtomicU64};
 pub mod draw;
 pub mod viewer;
 
-pub use viewer::{CellUiState, RowViewer, UiAction};
+pub use draw::Renderer;
+pub use viewer::{RowViewer, UiAction};
 
 /* ---------------------------------------------------------------------------------------------- */
 /*                                           CORE CLASS                                           */
 /* ---------------------------------------------------------------------------------------------- */
 
 /// Prevents direct modification of `Vec`
-#[derive(Debug, Clone)]
 pub struct Spreadsheet<R> {
-    /// Unique ID for this spreadsheet. Used for identifying cache entries during single
-    /// process run..
-    unique_id: u64,
-
     /// Efficient row data storage
     rows: VecDeque<R>,
+
+    /// Is Dirty?
+    dirty_flag: bool,
+
+    /// Ui
+    ui: Option<Box<draw::state::UiState<R>>>,
 }
 
-fn alloc_id() -> u64 {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+impl<R: std::fmt::Debug> std::fmt::Debug for Spreadsheet<R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Spreadsheet")
+            .field("rows", &self.rows)
+            .finish()
+    }
 }
 
 impl<R> Default for Spreadsheet<R> {
     fn default() -> Self {
         Self {
-            unique_id: alloc_id(),
             rows: Default::default(),
+            ui: Default::default(),
+            dirty_flag: false,
         }
     }
 }
@@ -37,8 +43,8 @@ impl<R> Default for Spreadsheet<R> {
 impl<R> FromIterator<R> for Spreadsheet<R> {
     fn from_iter<T: IntoIterator<Item = R>>(iter: T) -> Self {
         Self {
-            unique_id: alloc_id(),
             rows: iter.into_iter().collect(),
+            ..Default::default()
         }
     }
 }
@@ -77,8 +83,24 @@ impl<R> Spreadsheet<R> {
         });
 
         if removed_any {
-            self.unique_id = alloc_id();
+            self.ui = None;
         }
+    }
+
+    pub fn clear_dirty_flag(&mut self) {
+        self.dirty_flag = false;
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.dirty_flag
+    }
+
+    pub fn has_user_modification(&self) -> bool {
+        self.ui.as_ref().is_some_and(|x| todo!())
+    }
+
+    pub fn clear_user_modification_flag(&mut self) {
+        todo!()
     }
 }
 
@@ -86,7 +108,11 @@ impl<R> Extend<R> for Spreadsheet<R> {
     /// Programmatic extend operation will invalidate the index table cache.
     fn extend<T: IntoIterator<Item = R>>(&mut self, iter: T) {
         // Invalidate the cache
-        self.unique_id = alloc_id();
+        self.ui = None;
         self.rows.extend(iter);
     }
+}
+
+fn default<T: Default>() -> T {
+    T::default()
 }

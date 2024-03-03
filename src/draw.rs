@@ -1,322 +1,584 @@
-use std::{any::Any, collections::VecDeque, hash::Hasher, mem::replace, sync::Arc};
+use std::{
+    iter::repeat_with,
+    mem::{take, ManuallyDrop},
+};
 
-use egui::{ahash::AHasher, mutex::Mutex, Layout, RichText};
+use egui::{Align, Color32, Layout, PointerButton, Rect, Response, RichText, Sense, Stroke};
 use egui_extras::Column;
-use indexmap::IndexSet;
 use tap::prelude::{Pipe, Tap};
 
 use crate::{
-    viewer::{CellUiState, RowViewer},
-    Spreadsheet,
+    viewer::{EditorAction, MoveDirection, RowViewer, TrivialConfig},
+    Spreadsheet, UiAction,
 };
+
+use self::state::*;
 
 use format as f;
 
-/* ------------------------------------------ Indexing ------------------------------------------ */
-
-type ColumnIndex = usize;
-type RowIndex = usize;
-type LinearCellIndex = usize;
-type AnyRowValue = Box<dyn Any + Send>;
-
-#[derive(Clone, Copy)]
-struct IsAscending(bool);
-
-#[derive(Default)]
-struct UiState {
-    /// Cached sheet id. If sheet id mismatches, the UiState is invalidated.
-    sheet_id: u64,
-
-    /// Cached number of columns.
-    num_columns: usize,
-
-    /// Unique hash of the viewer. This is to prevent cache invalidation when the viewer
-    /// state is changed.
-    viewer_hash: u64,
-
-    /// Visible columns selected by user.
-    visible_cols: Vec<ColumnIndex>,
-
-    /// Sort option - column index and direction.
-    sort_by: Option<(ColumnIndex, IsAscending)>,
-
-    /// Row selections.
-    selections: IndexSet<LinearCellIndex>,
-
-    /// When activated, previous row value is cached here
-    ///
-    /// TODO: undo / redo
-    active_cell_source_value: Option<(bool, RowIndex, Box<dyn Any + Send>)>,
-
-    /// Any modification is stored here. We assume this is transient(putting this as field
-    /// of UiState), as it's brittle to external modification to the spreadsheet.
-    undo_stack: VecDeque<Command>,
-
-    /// Any redo will push back to undo stack. This will be cleared when any modification
-    /// is made.
-    redo_stack: Vec<Command>,
-
-    /// TODO: Clipboard
-    ///
-    /// -
-
-    /*
-
-        SECTION: Cache - Rendering
-
-    */
-    /// Cached rows.
-    cc_rows: Vec<(RowIndex, f32)>,
-
-    /// Spreadsheet is modified during the last validation.
-    cc_dirty: bool,
-}
-
-#[derive(Clone)]
-enum Command {
-    HideColumn(usize),
-    ShowColumn(usize),
-    SortColumn(usize, IsAscending),
-    CancelSort,
-}
-
-impl UiState {
-    fn validate_identity<R: Send, V: RowViewer<R>>(&mut self, id: u64, vwr: &mut V) {
-        let num_columns = vwr.num_columns();
-        let vwr_hash = AHasher::default().pipe(|mut x| {
-            std::hash::Hash::hash(vwr, &mut x);
-            x.finish()
-        });
-
-        if self.sheet_id == id && self.num_columns == num_columns && self.viewer_hash == vwr_hash {
-            return;
-        }
-
-        // Clear the cache
-        *self = Default::default();
-        self.sheet_id = id;
-        self.viewer_hash = vwr_hash;
-        self.num_columns = num_columns;
-
-        self.visible_cols.extend(0..num_columns);
-        self.cc_dirty = true;
-    }
-
-    fn validate_cc<R: Send, V: RowViewer<R>>(&mut self, sheet: &mut Spreadsheet<R>, vwr: &mut V) {
-        if !replace(&mut self.cc_dirty, false) {
-            return;
-        }
-
-        // TODO: Boost performance with `rayon`
-
-        // We should validate the entire cache.
-        let mut it_all_rows = sheet
-            .iter()
-            .enumerate()
-            .filter_map(|(i, x)| vwr.filter_row(x).then_some(i));
-
-        for (idx, (cc_row, _)) in self.cc_rows.iter_mut().enumerate() {
-            let Some(row) = it_all_rows.next() else {
-                // Clear the rest of the cache.
-                self.cc_rows.drain(idx..);
-                break;
-            };
-
-            *cc_row = row;
-        }
-
-        // If there are more rows left, we should add them.
-        for row in it_all_rows {
-            self.cc_rows.push((row, 10.)); // Just neat default value.
-        }
-
-        // TODO: Sort by column
-    }
-}
+pub(crate) mod state;
 
 /* ------------------------------------------ Rendering ----------------------------------------- */
 
-impl<R: Send> Spreadsheet<R> {
-    /// Show the spreadsheet.
-    ///
-    /// You should be careful on assigning `ui_id` to this spreadsheet. If it is
-    /// duplicated with any other spreadsheet that is actively rendered, it'll constantly
-    /// invalidate the index table cache which results in a performance hit.
-    pub fn show<V>(&mut self, ui: &mut egui::Ui, ui_id: impl Into<egui::Id>, viewer: &mut V)
-    where
-        R: Send,
-        V: RowViewer<R>,
-    {
-        let ui_id = ui_id.into();
-        let ui_state_ptr = ui
-            .memory(|x| x.data.get_temp::<Arc<Mutex<UiState>>>(ui_id))
-            .unwrap_or_default();
+pub struct Renderer<'a, R: Send + Clone, V: RowViewer<R>> {
+    sheet: &'a mut Spreadsheet<R>,
+    viewer: &'a mut V,
+    state: ManuallyDrop<Box<UiState<R>>>,
 
-        let mut ui_state = ui_state_ptr.lock();
-        ui_state.validate_identity(self.unique_id, viewer);
+    config: TrivialConfig,
+}
 
-        ui.push_id(ui_id, |ui| {
-            self.show_impl(ui, &mut ui_state, viewer);
-        });
+impl<'a, R: Send + Clone, V: RowViewer<R>> egui::Widget for Renderer<'a, R, V> {
+    fn ui(self, ui: &mut egui::Ui) -> Response {
+        self.show(ui)
+    }
+}
 
-        // Reset memory.
-        drop(ui_state);
-        ui.memory_mut(|x| x.data.insert_temp(ui_id, ui_state_ptr));
+impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
+    pub fn new(sheet: &'a mut Spreadsheet<R>, viewer: &'a mut V) -> Self {
+        Self {
+            state: ManuallyDrop::new(sheet.ui.take().unwrap_or_default()).tap_mut(|x| {
+                x.validate_identity(viewer);
+            }),
+            sheet,
+            config: viewer.trivial_config(),
+            viewer,
+        }
     }
 
-    fn show_impl<V>(&mut self, ui: &mut egui::Ui, s: &mut UiState, viewer: &mut V)
-    where
-        R: Send,
-        V: RowViewer<R>,
-    {
+    pub fn with_table_row_height(mut self, height: f32) -> Self {
+        self.config.table_row_height = Some(height);
+        self
+    }
+
+    pub fn with_max_undo_history(mut self, max_undo_history: usize) -> Self {
+        self.config.max_undo_history = max_undo_history;
+        self
+    }
+
+    pub fn show(mut self, ui: &mut egui::Ui) -> Response {
         let ctx = &ui.ctx().clone();
-        let mut added_commands = Vec::<Command>::new();
-        let mut undo = false;
-        let mut redo = false;
+        let ui_id = ui.id();
+        let style = ui.style().clone();
+        let painter = ui.painter().clone();
+        let visual = &style.visuals;
+        let viewer = &mut *self.viewer;
+        let s = &mut *self.state;
+        let mut resp_total = None::<Response>;
+        let mut resp_ret = None::<Response>;
+        let mut commands = Vec::<Command<R>>::new();
 
-        let mut builder = egui_extras::TableBuilder::new(ui)
-            .column(Column::auto_with_initial_suggestion(10.).resizable(false));
+        let green = if visual.window_fill.g() > 128 {
+            Color32::DARK_GREEN
+        } else {
+            Color32::GREEN
+        };
 
-        for &column in &s.visible_cols {
-            builder = builder.column(viewer.column_config(column));
+        let mut builder = egui_extras::TableBuilder::new(ui).column(Column::auto());
+
+        for &column in s.vis_cols.iter() {
+            builder = builder.column(viewer.column_config(column.0));
+        }
+
+        if s.is_editing() {
+            let interact_row = s.interactive_cell().0;
+            builder = builder.scroll_to_row(interact_row.0, None);
         }
 
         builder
-            .column(Column::remainder())
-            .drag_to_scroll(false) // Drag is used for selection
+            .columns(Column::auto(), s.num_columns() - s.vis_cols.len())
+            .drag_to_scroll(false) // Drag is used for selection;
             .striped(true)
             .max_scroll_height(f32::MAX)
+            .sense(Sense::click_and_drag().tap_mut(|x| x.focusable = true))
             .header(20., |mut h| {
+                h.set_selected(s.cci_has_focus);
                 h.col(|ui| {
-                    // TODO: Button to pop up context menu.
                     ui.centered_and_justified(|ui| {
-                        ui.menu_button("⛭", |ui| {
-                            // TODO:
-                        });
+                        ui.monospace("POS / ID");
                     });
                 });
+                h.set_selected(false);
 
-                for &col in &s.visible_cols {
-                    let (rect, resp) = h.col(|ui| {
+                let has_any_hidden_col = s.vis_cols.len() != s.num_columns();
+
+                for (vis_col, &col) in s.vis_cols.iter().enumerate() {
+                    let vis_col = VisColumnPos(vis_col);
+                    let mut painter = None;
+                    let (_, resp) = h.col(|ui| {
                         ui.horizontal_centered(|ui| {
-                            // TODO: Sort indicator
-                            let is_hover =
-                                ui.rect_contains_pointer(ui.available_rect_before_wrap());
+                            if let Some(pos) = s.sort().iter().position(|(c, ..)| c == &col) {
+                                let asc = &s.sort()[pos].1;
 
-                            ui.label(viewer.column_name(col)).hovered();
-
-                            if !is_hover {
-                                return;
+                                ui.colored_label(
+                                    if !asc.0 { Color32::RED } else { green },
+                                    RichText::new(format!(
+                                        "{}{}",
+                                        if asc.0 { "↑" } else { "↓" },
+                                        pos + 1,
+                                    ))
+                                    .monospace(),
+                                );
+                            } else {
+                                ui.monospace(" ");
                             }
 
-                            ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
-                                let hide_resp = ui.selectable_label(
-                                    false,
-                                    RichText::new("✖").color(ui.visuals().error_fg_color),
-                                );
-
-                                if hide_resp.clicked() {
-                                    dbg!()
-                                }
-                            });
+                            ui.label(viewer.column_name(col.0));
                         });
+
+                        painter = Some(ui.painter().clone());
                     });
 
-                    resp.context_menu(|ui| {});
+                    // Set drag payload for column reordering.
+                    resp.dnd_set_drag_payload(vis_col);
+
+                    if resp.dragged() {
+                        egui::popup::show_tooltip_text(
+                            ctx,
+                            "_EGUI_DATATABLE__COLUMN_MOVE__".into(),
+                            viewer.column_name(col.0),
+                        );
+                    }
+
+                    if viewer.is_sortable_column(col.0) && resp.clicked_by(PointerButton::Primary) {
+                        let mut sort = s.sort().to_owned();
+                        match sort.iter_mut().find(|(c, ..)| c == &col) {
+                            Some((_, asc)) => match asc.0 {
+                                true => asc.0 = false,
+                                false => sort.retain(|(c, ..)| c != &col),
+                            },
+                            None => {
+                                sort.push((col, IsAscending(true)));
+                            }
+                        }
+
+                        commands.push(Command::SetColumnSort(sort));
+                    }
+
+                    if resp.dnd_hover_payload::<VisColumnPos>().is_some() {
+                        if let Some(p) = &painter {
+                            p.rect_filled(
+                                resp.rect,
+                                egui::Rounding::ZERO,
+                                visual.selection.bg_fill.gamma_multiply(0.5),
+                            );
+                        }
+                    }
+
+                    if let Some(payload) = resp.dnd_release_payload::<VisColumnPos>() {
+                        commands.push(Command::ReorderColumn {
+                            from: *payload,
+                            to: vis_col
+                                .0
+                                .pipe(|v| v + (payload.0 < v) as usize)
+                                .pipe(VisColumnPos),
+                        })
+                    }
+
+                    resp.context_menu(|ui| {
+                        if ui.button("Hide").clicked() {
+                            commands.push(Command::HideColumn(col));
+                            ui.close_menu();
+                        }
+
+                        if !s.sort().is_empty() && ui.button("Clear Sort").clicked() {
+                            commands.push(Command::SetColumnSort(Vec::new()));
+                            ui.close_menu();
+                        }
+
+                        if has_any_hidden_col {
+                            ui.separator();
+                            ui.label("Hidden");
+
+                            for col in (0..s.num_columns()).map(ColumnIdx) {
+                                if !s.vis_cols.contains(&col)
+                                    && ui.button(viewer.column_name(col.0)).clicked()
+                                {
+                                    commands.push(Command::ShowColumn {
+                                        what: col,
+                                        at: vis_col,
+                                    });
+                                    ui.close_menu();
+                                }
+                            }
+                        }
+                    });
                 }
 
-                // Remainder
-                h.col(|ui| {});
+                // Account for header response to calculate total response.
+                resp_total = Some(h.response());
             })
             .tap_mut(|table| {
                 table.ui_mut().separator();
             })
-            .body(|body| {
-                // Validate ui state. Defer this as late as possible; since it may not be
-                // called if the table area is out of the visible space.
-                s.validate_cc(self, viewer);
+            .body(|body: egui_extras::TableBody<'_>| {
+                resp_ret =
+                    Some(self.show_body(body, painter, commands, ctx, &style, ui_id, resp_total));
+            });
 
-                let mut row_len_updates = Vec::new();
-                let vis_row_digits = s.cc_rows.len().max(1).ilog10();
-                let row_id_digits = self.len().max(1).ilog10();
+        resp_ret.unwrap_or_else(|| ui.label("??"))
+    }
 
-                body.heterogeneous_rows(s.cc_rows.iter().map(|(_, a)| *a), |mut row| {
-                    let table_row = row.index();
-                    let (row_id, row_height_prev) = s.cc_rows[table_row];
+    #[allow(clippy::too_many_arguments)]
+    fn show_body(
+        &mut self,
+        body: egui_extras::TableBody<'_>,
+        mut _painter: egui::Painter,
+        mut commands: Vec<Command<R>>,
+        ctx: &egui::Context,
+        style: &egui::Style,
+        ui_id: egui::Id,
+        mut resp_total: Option<Response>,
+    ) -> Response {
+        let viewer = &mut *self.viewer;
+        let s = &mut *self.state;
+        let sheet = &mut *self.sheet;
+        let visual = &style.visuals;
+        let visible_cols = s.vis_cols.clone();
+        let no_rounding = egui::Rounding::ZERO;
 
-                    // Render row header button
-                    let (mut rect, mut resp) = row.col(|ui| {
-                        ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.monospace(
-                                RichText::from(f!(
-                                    "{row_id:·>width$}",
-                                    width = row_id_digits as usize
-                                ))
-                                .strong(),
-                            );
+        let mut actions = Vec::<UiAction>::new();
+        let mut edit_started = false;
 
-                            ui.monospace(
-                                RichText::from(f!(
-                                    "{:·>width$}",
-                                    table_row + 1,
-                                    width = vis_row_digits as usize
-                                ))
-                                .weak(),
-                            );
-                        });
-                    });
+        // Preemptively consume all hotkeys.
+        'detect_hotkey: {
+            // Detect hotkey inputs only when the table has focus. While editing, let the
+            // editor consume input.
+            if !s.cci_has_focus {
+                break 'detect_hotkey;
+            }
 
-                    // Refresh height of the row.
-                    let mut max_cell_height = rect.height();
+            let context = &s.ui_action_context();
+            actions.extend(
+                repeat_with(|| ctx.input_mut(|i| viewer.detect_hotkey(i, context)))
+                    .map_while(|x| x),
+            )
+        }
 
-                    for &col in &s.visible_cols {
-                        let linear_index = table_row * s.visible_cols.len() + col;
-                        let selected = s.selections.contains(&linear_index);
+        // Validate ui state. Defer this as late as possible; since it may not be
+        // called if the table area is out of the visible space.
+        s.validate_cc(&mut sheet.rows, viewer);
 
-                        row.set_selected(selected);
+        // Checkout `cc_rows` to satisfy borrow checker. We need to access to
+        // state mutably within row rendering; therefore, we can't simply borrow
+        // `cc_rows` during the whole logic!
+        let mut cc_rows = take(&mut s.cc_rows);
 
-                        (rect, resp) = row.col(|ui| {
-                            let edit_state = if let Some((is_fresh, ..)) = s
-                                .active_cell_source_value
-                                .as_mut()
-                                .filter(|(_, id, _)| *id == row_id)
-                            {
-                                if *is_fresh {
-                                    *is_fresh = false;
-                                    CellUiState::EditStarted
-                                } else {
-                                    CellUiState::Editing
-                                }
-                            } else {
-                                CellUiState::View
-                            };
+        let mut row_height_updates = Vec::new();
+        let vis_row_digits = cc_rows.len().max(1).ilog10();
+        let row_id_digits = sheet.len().max(1).ilog10();
 
-                            ui.add_enabled_ui(edit_state.is_editing(), |ui| {
-                                viewer.draw_cell(ui, &mut self.rows[row_id], col, edit_state);
-                            });
-                        });
+        let body_max_rect = body.max_rect();
+        let body_widths = body.widths()[1..body.widths().len().max(1)].to_owned();
 
-                        max_cell_height = rect.height().max(max_cell_height);
+        let pointer_interact_pos = ctx.input(|i| i.pointer.latest_pos().unwrap_or_default());
+        let pointer_primary_down = ctx.input(|i| i.pointer.button_down(PointerButton::Primary));
 
-                        // TODO: Create actions from response.
-                        // - Highlight on click
-                        // - Ctrl + Click, Shift + Click, Ctrl + A, Drag.
-                        // -
+        let render_fn = |mut row: egui_extras::TableRow| {
+            let vis_row = VisRowPos(row.index());
+            let (row_id, prev_row_height) = cc_rows[vis_row.0];
+
+            let mut row_elem_start = Default::default();
+
+            // Check if current row is edition target
+            let edit_state = s.row_is_fresh_edit(row_id);
+            let is_interactive_row = s.is_interactive_row(vis_row);
+
+            // Mark row background filled if being edited.
+            row.set_selected(edit_state.is_some());
+
+            // Render row header button
+            let (_, _) = row.col(|ui| {
+                // Calculate the position where values start.
+                row_elem_start = ui.max_rect().right_top();
+
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.separator();
+
+                    ui.monospace(
+                        RichText::from(f!("{:·>width$}", row_id.0, width = row_id_digits as usize))
+                            .strong(),
+                    );
+
+                    ui.monospace(
+                        RichText::from(f!(
+                            "{:·>width$}",
+                            vis_row.0 + 1,
+                            width = vis_row_digits as usize
+                        ))
+                        .weak(),
+                    );
+                });
+            });
+
+            // Overridable maximum height
+            let mut maximum_height = 0.;
+
+            // Render cell contents regardless of the edition state.
+            for (vis_col, col) in visible_cols.iter().enumerate() {
+                let vis_col = VisColumnPos(vis_col);
+                let linear_index = vis_row.linear_index(visible_cols.len(), vis_col);
+                let selected = s.is_selected(vis_row, vis_col);
+                let cci_selected = s.is_selected_cci(vis_row, vis_col);
+                let is_editing = edit_state.is_some();
+                let is_interactive_cell = is_interactive_row.is_some_and(|x| x == vis_col);
+
+                // Mark background filled if selected.
+                row.set_selected(cci_selected);
+
+                let (rect, resp) = row.col(|ui| {
+                    let ui_max_rect = ui.max_rect();
+                    ui.set_enabled(false);
+
+                    if !cci_selected && selected {
+                        ui.painter()
+                            .rect_filled(ui_max_rect, no_rounding, visual.extreme_bg_color);
                     }
 
-                    if row_height_prev != max_cell_height {
-                        row_len_updates.push((table_row, max_cell_height));
-                    }
+                    viewer.cell_view(ui, &sheet.rows[row_id.0], col.0);
 
-                    // Remainder
-                    row.col(|_| {});
+                    if selected {
+                        ui.painter().rect_stroke(
+                            ui_max_rect,
+                            no_rounding,
+                            Stroke {
+                                width: 1.,
+                                color: visual.weak_text_color(),
+                            },
+                        );
+                    }
+                    if is_interactive_row.is_some() && !is_editing {
+                        let st = Stroke {
+                            width: 1.,
+                            color: visual.warn_fg_color,
+                        };
+
+                        let xr = ui_max_rect.x_range();
+                        let yr = ui_max_rect.y_range();
+                        ui.painter().hline(xr, yr.min, st);
+                        ui.painter().hline(xr, yr.max, st);
+
+                        if is_interactive_cell {
+                            ui.painter().rect_stroke(ui_max_rect, no_rounding, st);
+                        }
+                    }
                 });
 
-                // Update height caches
+                maximum_height = rect.height().max(maximum_height);
 
-                for (row_index, row_height) in row_len_updates {
-                    s.cc_rows[row_index].1 = row_height;
+                // TODO: Create actions from response.
+                // - Highlight on click
+                // - Ctrl + Click, Shift + Click, Ctrl + A, Drag.
+
+                let cci_hovered: bool = s.cci_has_focus
+                    && s.has_cci_selection()
+                    && resp.rect.contains(pointer_interact_pos);
+                let sel_drag = cci_hovered && pointer_primary_down;
+                let sel_click = !s.has_cci_selection() && resp.hovered() && pointer_primary_down;
+
+                if !is_editing && (sel_drag || sel_click) {
+                    // Expand cci selection
+                    s.cci_sel_update(linear_index);
                 }
-            });
+
+                if resp.clicked_by(PointerButton::Primary) {
+                    commands.push(Command::EditStart(
+                        row_id,
+                        vis_col,
+                        sheet.rows[row_id.0].clone().into(),
+                    ));
+                    edit_started = true;
+                }
+
+                // TODO: Context menu for this cell
+                // - Insert before/after
+                // - Remove row
+                // - Copy line/paste cell
+            }
+
+            if let Some(focus_column) = edit_state {
+                // Column ui rectangles.
+                let column_rects;
+
+                // Editing window's rectangle.
+                let edit_window_rect;
+
+                {
+                    // Calculate column rectangles ...
+                    let mut rects = Vec::with_capacity(body_widths.len());
+                    let mut width_acc = style.spacing.item_spacing.x * 0.5;
+
+                    for &width in &body_widths {
+                        let width = width + style.spacing.item_spacing.x;
+                        let rect = Rect::from_min_size(
+                            row_elem_start + egui::vec2(width_acc, 0.),
+                            egui::vec2(width, prev_row_height),
+                        );
+
+                        width_acc += width;
+                        rects.push(rect);
+                    }
+
+                    edit_window_rect = rects
+                        .iter()
+                        .fold(Rect::NOTHING, |acc, x| acc.union(*x))
+                        .pipe(|x| x.translate(egui::vec2(0., style.spacing.item_spacing.y * 0.5)));
+
+                    column_rects = rects;
+                };
+
+                let response = egui::Window::new("")
+                    .id(ui_id.with("__Egui_DataTable_Window__").with(vis_row.0))
+                    .title_bar(false)
+                    .min_size(edit_window_rect.size())
+                    .fixed_pos(edit_window_rect.min)
+                    .auto_sized()
+                    .constrain_to(body_max_rect)
+                    .frame(egui::Frame::none().fill(visual.window_fill))
+                    .show(ctx, |ui| {
+                        let mut ui_columns = column_rects
+                            .iter()
+                            .cloned()
+                            .enumerate()
+                            .map(|(col, rect)| {
+                                ui.child_ui_with_id_source(
+                                    rect.shrink2(style.spacing.item_spacing * 0.5),
+                                    Layout::top_down_justified(Align::LEFT),
+                                    s.vis_cols[col].0,
+                                )
+                                .tap_mut(|x| {
+                                    x.set_clip_rect(
+                                        rect.with_max_y(f32::INFINITY).intersect(body_max_rect),
+                                    )
+                                })
+                            })
+                            .collect::<Vec<_>>();
+
+                        for (vis_col, ui) in ui_columns.iter_mut().enumerate() {
+                            let column = visible_cols[vis_col].0;
+                            let action: EditorAction = viewer
+                                .cell_edit(
+                                    ui,
+                                    s.unwrap_editing_row_data(),
+                                    column,
+                                    focus_column.map(|x| visible_cols[x.0].0),
+                                )
+                                .into();
+
+                            match action {
+                                EditorAction::Idle => (),
+                                EditorAction::Commit => actions
+                                    .push(UiAction::CommitEditionAndMove(MoveDirection::Down)),
+                                EditorAction::Cancel => actions.push(UiAction::CancelEdition),
+                            }
+                        }
+
+                        let ui_min_rect = ui_columns
+                            .into_iter()
+                            .fold(Rect::NOTHING, |acc, c_ui| acc.union(c_ui.min_rect()));
+
+                        ui.advance_cursor_after_rect(
+                            ui_min_rect.union(edit_window_rect).intersect(body_max_rect),
+                        );
+
+                        for mut rect in column_rects {
+                            rect.min.y = ui_min_rect.min.y;
+                            rect.max.y = ui_min_rect.max.y;
+
+                            ui.painter().rect_stroke(
+                                rect,
+                                egui::Rounding::default(),
+                                visual.window_stroke,
+                            );
+                        }
+
+                        maximum_height = ui_min_rect.height().max(maximum_height);
+                    });
+
+                if let Some(response) = response {
+                    let resp_tot = resp_total.as_mut().unwrap();
+                    *resp_tot = resp_tot.union(response.response);
+                }
+            }
+
+            // Accumulate response
+            if let Some(resp) = &mut resp_total {
+                *resp = resp.union(row.response());
+            } else {
+                resp_total = Some(row.response());
+            }
+
+            // Update row height cache if necessary.
+            if self.config.table_row_height.is_none() && prev_row_height != maximum_height {
+                row_height_updates.push((vis_row, maximum_height));
+            }
+        };
+
+        if let Some(height) = self.config.table_row_height {
+            body.rows(height, cc_rows.len(), render_fn);
+        } else {
+            body.heterogeneous_rows(cc_rows.iter().map(|(_, a)| *a), render_fn);
+        }
+
+        if ctx.input(|i| i.pointer.button_released(PointerButton::Primary)) {
+            if let Some(sel) = s.cci_sel_take().filter(|_| !edit_started) {
+                // TODO: By modifier key, selection may appended to the current selection.
+                // - Shift: Expand last selection
+                // - Ctrl: Append to selections
+                commands.push(Command::CacheSetSelection(vec![sel]));
+            }
+        }
+
+        if let Some(resp) = resp_total.clone() {
+            if resp.clicked() | resp.dragged() {
+                s.cci_has_focus = true;
+            } else if resp.clicked_elsewhere() {
+                s.cci_has_focus = false;
+            }
+        }
+
+        // Check in borrowed `cc_rows` back to state.
+        s.cc_rows = {
+            if !row_height_updates.is_empty() {
+                ctx.request_repaint();
+            }
+
+            for (row_index, row_height) in row_height_updates {
+                cc_rows[row_index.0].1 = row_height;
+            }
+
+            cc_rows
+        };
+
+        // Handle queued actions
+        commands.extend(
+            actions
+                .into_iter()
+                .flat_map(|action| s.try_apply_ui_action(sheet, viewer, action)),
+        );
+
+        // Handle queued commands
+        for cmd in commands {
+            if matches!(cmd, Command::CommitEdit) {
+                // If any commit action is detected, release any remaining focus.
+                ctx.memory_mut(|x| {
+                    if let Some(fc) = x.focus() {
+                        x.surrender_focus(fc)
+                    }
+                });
+            }
+
+            s.push_new_command(sheet, cmd, self.config.max_undo_history);
+        }
+
+        // Total response
+        resp_total.unwrap()
+    }
+}
+
+impl<'a, R: Send + Clone, V: RowViewer<R>> Drop for Renderer<'a, R, V> {
+    fn drop(&mut self) {
+        // SAFETY: `state` is guaranteed to be initialized.
+        self.sheet.ui = Some(unsafe { ManuallyDrop::take(&mut self.state) });
     }
 }
