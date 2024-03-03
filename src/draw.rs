@@ -1,8 +1,9 @@
-use std::{any::Any, collections::VecDeque, mem::replace, sync::Arc};
+use std::{any::Any, collections::VecDeque, hash::Hasher, mem::replace, sync::Arc};
 
-use egui::{mutex::Mutex, RichText};
+use egui::{ahash::AHasher, mutex::Mutex, RichText};
 use egui_extras::Column;
 use indexmap::IndexSet;
+use tap::prelude::Pipe;
 
 use crate::{viewer::RowViewer, Spreadsheet};
 
@@ -24,6 +25,10 @@ struct UiState {
 
     /// Cached number of columns.
     num_columns: usize,
+
+    /// Unique hash of the viewer. This is to prevent cache invalidation when the viewer
+    /// state is changed.
+    viewer_hash: u64,
 
     /// Visible columns selected by user.
     visible_cols: Vec<ColumnIndex>,
@@ -63,17 +68,25 @@ struct UiState {
 enum Command {}
 
 impl UiState {
-    fn validate_identity(&mut self, id: u64, num_columns: usize) {
-        if self.sheet_id == id && self.num_columns == num_columns {
+    fn validate_identity<R: Send, V: RowViewer<R>>(&mut self, id: u64, vwr: &mut V) {
+        let num_columns = vwr.num_columns();
+        let vwr_hash = AHasher::default().pipe(|mut x| {
+            std::hash::Hash::hash(vwr, &mut x);
+            x.finish()
+        });
+
+        if self.sheet_id == id && self.num_columns == num_columns && self.viewer_hash == vwr_hash {
             return;
         }
 
         // Clear the cache
         *self = Default::default();
         self.sheet_id = id;
-        self.cc_dirty = true;
+        self.viewer_hash = vwr_hash;
         self.num_columns = num_columns;
+
         self.visible_cols.extend(0..num_columns);
+        self.cc_dirty = true;
     }
 
     fn validate_cc<R: Send, V: RowViewer<R>>(&mut self, sheet: &mut Spreadsheet<R>, vwr: &mut V) {
@@ -127,7 +140,7 @@ impl<R: Send> Spreadsheet<R> {
             .unwrap_or_default();
 
         let mut ui_state = ui_state_ptr.lock();
-        ui_state.validate_identity(self.unique_id, viewer.num_columns());
+        ui_state.validate_identity(self.unique_id, viewer);
 
         ui.push_id(ui_id, |ui| {
             self.show_impl(ui, &mut ui_state, viewer);

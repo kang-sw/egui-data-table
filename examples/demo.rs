@@ -4,6 +4,7 @@ use egui_spreadsheet::RowViewer;
 
 /* ----------------------------------------- Data Scheme ---------------------------------------- */
 
+#[derive(Hash)]
 struct Viewer;
 
 struct Row(String, i32, bool, Grade);

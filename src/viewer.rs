@@ -17,7 +17,7 @@ pub enum CellEditState {
     Enabled,
 }
 
-pub trait RowViewer<R: Send> {
+pub trait RowViewer<R: Send>: std::hash::Hash {
     fn num_columns(&mut self) -> usize;
 
     fn column_name(&mut self, column: usize) -> &str;
