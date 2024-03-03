@@ -1,11 +1,14 @@
 use std::{any::Any, collections::VecDeque, hash::Hasher, mem::replace, sync::Arc};
 
-use egui::{ahash::AHasher, mutex::Mutex, RichText};
+use egui::{ahash::AHasher, mutex::Mutex, Layout, RichText};
 use egui_extras::Column;
 use indexmap::IndexSet;
-use tap::prelude::Pipe;
+use tap::prelude::{Pipe, Tap};
 
-use crate::{viewer::RowViewer, Spreadsheet};
+use crate::{
+    viewer::{CellUiState, RowViewer},
+    Spreadsheet,
+};
 
 use format as f;
 
@@ -16,6 +19,7 @@ type RowIndex = usize;
 type LinearCellIndex = usize;
 type AnyRowValue = Box<dyn Any + Send>;
 
+#[derive(Clone, Copy)]
 struct IsAscending(bool);
 
 #[derive(Default)]
@@ -42,7 +46,7 @@ struct UiState {
     /// When activated, previous row value is cached here
     ///
     /// TODO: undo / redo
-    active_cell_source_value: Option<Box<dyn Any + Send>>,
+    active_cell_source_value: Option<(bool, RowIndex, Box<dyn Any + Send>)>,
 
     /// Any modification is stored here. We assume this is transient(putting this as field
     /// of UiState), as it's brittle to external modification to the spreadsheet.
@@ -51,6 +55,10 @@ struct UiState {
     /// Any redo will push back to undo stack. This will be cleared when any modification
     /// is made.
     redo_stack: Vec<Command>,
+
+    /// TODO: Clipboard
+    ///
+    /// -
 
     /*
 
@@ -65,7 +73,12 @@ struct UiState {
 }
 
 #[derive(Clone)]
-enum Command {}
+enum Command {
+    HideColumn(usize),
+    ShowColumn(usize),
+    SortColumn(usize, IsAscending),
+    CancelSort,
+}
 
 impl UiState {
     fn validate_identity<R: Send, V: RowViewer<R>>(&mut self, id: u64, vwr: &mut V) {
@@ -156,14 +169,15 @@ impl<R: Send> Spreadsheet<R> {
         R: Send,
         V: RowViewer<R>,
     {
+        let ctx = &ui.ctx().clone();
         let mut added_commands = Vec::<Command>::new();
         let mut undo = false;
         let mut redo = false;
 
-        let mut builder =
-            egui_extras::TableBuilder::new(ui).column(Column::auto().resizable(false));
+        let mut builder = egui_extras::TableBuilder::new(ui)
+            .column(Column::auto_with_initial_suggestion(10.).resizable(false));
 
-        for column in 0..s.num_columns {
+        for &column in &s.visible_cols {
             builder = builder.column(viewer.column_config(column));
         }
 
@@ -171,21 +185,51 @@ impl<R: Send> Spreadsheet<R> {
             .column(Column::remainder())
             .drag_to_scroll(false) // Drag is used for selection
             .striped(true)
-            .sense(egui::Sense::click_and_drag())
             .max_scroll_height(f32::MAX)
             .header(20., |mut h| {
                 h.col(|ui| {
                     // TODO: Button to pop up context menu.
+                    ui.centered_and_justified(|ui| {
+                        ui.menu_button("⛭", |ui| {
+                            // TODO:
+                        });
+                    });
                 });
 
                 for &col in &s.visible_cols {
-                    h.col(|ui| {
-                        ui.label(viewer.column_name(col));
+                    let (rect, resp) = h.col(|ui| {
+                        ui.horizontal_centered(|ui| {
+                            // TODO: Sort indicator
+                            let is_hover =
+                                ui.rect_contains_pointer(ui.available_rect_before_wrap());
+
+                            ui.label(viewer.column_name(col)).hovered();
+
+                            if !is_hover {
+                                return;
+                            }
+
+                            ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                                let hide_resp = ui.selectable_label(
+                                    false,
+                                    RichText::new("✖").color(ui.visuals().error_fg_color),
+                                );
+
+                                if hide_resp.clicked() {
+                                    dbg!()
+                                }
+                            });
+                        });
                     });
+
+                    resp.context_menu(|ui| {});
                 }
 
                 // Remainder
-                h.col(|_| {});
+                h.col(|ui| {});
+            })
+            .tap_mut(|table| {
+                table.ui_mut().separator();
             })
             .body(|body| {
                 // Validate ui state. Defer this as late as possible; since it may not be
@@ -193,17 +237,32 @@ impl<R: Send> Spreadsheet<R> {
                 s.validate_cc(self, viewer);
 
                 let mut row_len_updates = Vec::new();
+                let vis_row_digits = s.cc_rows.len().max(1).ilog10();
+                let row_id_digits = self.len().max(1).ilog10();
 
                 body.heterogeneous_rows(s.cc_rows.iter().map(|(_, a)| *a), |mut row| {
-                    let row_index = row.index();
-                    let (row_slot_id, row_height_prev) = s.cc_rows[row_index];
+                    let table_row = row.index();
+                    let (row_id, row_height_prev) = s.cc_rows[table_row];
 
                     // Render row header button
                     let (mut rect, mut resp) = row.col(|ui| {
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::from(f!("{}", row_index + 1)).monospace().weak());
-                            ui.add_space(0.);
-                            ui.label(RichText::from(f!("{row_slot_id}")).monospace().strong());
+                        ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.monospace(
+                                RichText::from(f!(
+                                    "{row_id:·>width$}",
+                                    width = row_id_digits as usize
+                                ))
+                                .strong(),
+                            );
+
+                            ui.monospace(
+                                RichText::from(f!(
+                                    "{:·>width$}",
+                                    table_row + 1,
+                                    width = vis_row_digits as usize
+                                ))
+                                .weak(),
+                            );
                         });
                     });
 
@@ -211,22 +270,29 @@ impl<R: Send> Spreadsheet<R> {
                     let mut max_cell_height = rect.height();
 
                     for &col in &s.visible_cols {
-                        let linear_index = row_index * s.visible_cols.len() + col;
+                        let linear_index = table_row * s.visible_cols.len() + col;
                         let selected = s.selections.contains(&linear_index);
-                        let is_active = s.active_cell_source_value.is_some()
-                            && selected
-                            && s.selections.first() == Some(&linear_index);
 
                         row.set_selected(selected);
 
                         (rect, resp) = row.col(|ui| {
-                            ui.add_enabled_ui(is_active, |ui| {
-                                viewer.draw_column_edit(
-                                    ui,
-                                    &mut self.rows[row_slot_id],
-                                    col,
-                                    is_active,
-                                );
+                            let edit_state = if let Some((is_fresh, ..)) = s
+                                .active_cell_source_value
+                                .as_mut()
+                                .filter(|(_, id, _)| *id == row_id)
+                            {
+                                if *is_fresh {
+                                    *is_fresh = false;
+                                    CellUiState::EditStarted
+                                } else {
+                                    CellUiState::Editing
+                                }
+                            } else {
+                                CellUiState::View
+                            };
+
+                            ui.add_enabled_ui(edit_state.is_editing(), |ui| {
+                                viewer.draw_cell(ui, &mut self.rows[row_id], col, edit_state);
                             });
                         });
 
@@ -239,7 +305,7 @@ impl<R: Send> Spreadsheet<R> {
                     }
 
                     if row_height_prev != max_cell_height {
-                        row_len_updates.push((row_index, max_cell_height));
+                        row_len_updates.push((table_row, max_cell_height));
                     }
 
                     // Remainder

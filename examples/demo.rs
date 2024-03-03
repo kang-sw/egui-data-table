@@ -1,6 +1,6 @@
 use std::iter::repeat_with;
 
-use egui_spreadsheet::RowViewer;
+use egui_spreadsheet::{viewer::CellUiState, RowViewer};
 
 /* ----------------------------------------- Data Scheme ---------------------------------------- */
 
@@ -69,7 +69,7 @@ impl RowViewer<Row> for Viewer {
         }
     }
 
-    fn draw_column_edit(&mut self, ui: &mut egui::Ui, row: &mut Row, column: usize, _active: bool) {
+    fn draw_cell(&mut self, ui: &mut egui::Ui, row: &mut Row, column: usize, _: CellUiState) {
         match column {
             0 => {
                 ui.text_edit_singleline(&mut row.0);

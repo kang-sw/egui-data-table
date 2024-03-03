@@ -3,7 +3,7 @@ use std::{collections::VecDeque, sync::atomic::AtomicU64};
 pub mod draw;
 pub mod viewer;
 
-pub use viewer::{RowViewer, UiAction};
+pub use viewer::{CellUiState, RowViewer, UiAction};
 
 /* ---------------------------------------------------------------------------------------------- */
 /*                                           CORE CLASS                                           */
@@ -48,7 +48,7 @@ impl<R> Spreadsheet<R> {
         Default::default()
     }
 
-    pub fn num_rows(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.rows.len()
     }
 
