@@ -1,5 +1,3 @@
-use std::{collections::VecDeque, sync::atomic::AtomicU64};
-
 pub mod draw;
 pub mod viewer;
 
@@ -11,9 +9,18 @@ pub use viewer::{RowViewer, UiAction};
 /* ---------------------------------------------------------------------------------------------- */
 
 /// Prevents direct modification of `Vec`
-pub struct Spreadsheet<R> {
+pub struct DataTable<R> {
     /// Efficient row data storage
-    rows: VecDeque<R>,
+    ///
+    /// XXX: If we use `VecDeque` here, it'd be more efficient when inserting new element
+    /// at the beginning of the list. However, it does not support `splice` method like
+    /// `Vec`, which results in extremely inefficient when there's multiple insertions.
+    ///
+    /// The efficiency order of general operations are only twice as slow when using
+    /// `Vec`, we're just ignoring it for now. Maybe we can utilize `IndexMap` for this
+    /// purpose, however, there are many trade-offs to consider, for now, we're just
+    /// using `Vec` for simplicity.
+    rows: Vec<R>,
 
     /// Is Dirty?
     dirty_flag: bool,
@@ -22,7 +29,7 @@ pub struct Spreadsheet<R> {
     ui: Option<Box<draw::state::UiState<R>>>,
 }
 
-impl<R: std::fmt::Debug> std::fmt::Debug for Spreadsheet<R> {
+impl<R: std::fmt::Debug> std::fmt::Debug for DataTable<R> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Spreadsheet")
             .field("rows", &self.rows)
@@ -30,7 +37,7 @@ impl<R: std::fmt::Debug> std::fmt::Debug for Spreadsheet<R> {
     }
 }
 
-impl<R> Default for Spreadsheet<R> {
+impl<R> Default for DataTable<R> {
     fn default() -> Self {
         Self {
             rows: Default::default(),
@@ -40,7 +47,7 @@ impl<R> Default for Spreadsheet<R> {
     }
 }
 
-impl<R> FromIterator<R> for Spreadsheet<R> {
+impl<R> FromIterator<R> for DataTable<R> {
     fn from_iter<T: IntoIterator<Item = R>>(iter: T) -> Self {
         Self {
             rows: iter.into_iter().collect(),
@@ -49,7 +56,7 @@ impl<R> FromIterator<R> for Spreadsheet<R> {
     }
 }
 
-impl<R> Spreadsheet<R> {
+impl<R> DataTable<R> {
     pub fn new() -> Self {
         Default::default()
     }
@@ -66,11 +73,13 @@ impl<R> Spreadsheet<R> {
         self.rows.iter()
     }
 
-    pub fn take(&mut self) -> VecDeque<R> {
+    pub fn take(&mut self) -> Vec<R> {
+        self.ui = None;
         std::mem::take(&mut self.rows)
     }
 
-    pub fn replace(&mut self, new: VecDeque<R>) -> VecDeque<R> {
+    pub fn replace(&mut self, new: Vec<R>) -> Vec<R> {
+        self.ui = None;
         std::mem::replace(&mut self.rows, new)
     }
 
@@ -96,15 +105,15 @@ impl<R> Spreadsheet<R> {
     }
 
     pub fn has_user_modification(&self) -> bool {
-        self.ui.as_ref().is_some_and(|x| todo!())
+        self.dirty_flag
     }
 
     pub fn clear_user_modification_flag(&mut self) {
-        todo!()
+        self.dirty_flag = false;
     }
 }
 
-impl<R> Extend<R> for Spreadsheet<R> {
+impl<R> Extend<R> for DataTable<R> {
     /// Programmatic extend operation will invalidate the index table cache.
     fn extend<T: IntoIterator<Item = R>>(&mut self, iter: T) {
         // Invalidate the cache

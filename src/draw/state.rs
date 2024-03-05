@@ -1,17 +1,19 @@
 use std::{
-    collections::VecDeque,
-    hash::Hasher,
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    hash::{Hash, Hasher},
     mem::{replace, take},
-    sync::Arc,
 };
 
-use egui::ahash::{AHasher, HashMap};
+use egui::{
+    ahash::{AHasher, HashMap, HashMapExt},
+    Modifiers,
+};
 use tap::prelude::{Pipe, Tap};
 
 use crate::{
     default,
     viewer::{MoveDirection, UiActionContext, UiCursorState},
-    RowViewer, Spreadsheet, UiAction,
+    DataTable, RowViewer, UiAction,
 };
 
 macro_rules! int_ty {
@@ -27,9 +29,11 @@ macro_rules! int_ty {
 int_ty!(
     struct VisLinearIdx(usize);
     struct VisSelection(VisLinearIdx, VisLinearIdx);
+    struct RowSlabIndex(usize);
     struct ColumnIdx(usize);
-    struct RowId(usize);
+    struct RowIdx(usize);
     struct VisRowPos(usize);
+    struct VisRowOffset(usize);
     struct VisColumnPos(usize);
     struct IsAscending(bool);
 );
@@ -40,6 +44,19 @@ impl VisSelection {
         let (bottom, right) = self.1.row_col(ncol);
 
         row.0 >= top.0 && row.0 <= bottom.0 && col.0 >= left.0 && col.0 <= right.0
+    }
+
+    pub fn contains_rect(&self, ncol: usize, other: Self) -> bool {
+        let (top, left) = self.0.row_col(ncol);
+        let (bottom, right) = self.1.row_col(ncol);
+
+        let (other_top, other_left) = other.0.row_col(ncol);
+        let (other_bottom, other_right) = other.1.row_col(ncol);
+
+        other_top.0 >= top.0
+            && other_bottom.0 <= bottom.0
+            && other_left.0 >= left.0
+            && other_right.0 <= right.0
     }
 
     pub fn from_points(ncol: usize, a: VisLinearIdx, b: VisLinearIdx) -> Self {
@@ -57,9 +74,31 @@ impl VisSelection {
         )
     }
 
-    // pub fn from_row_col(ncol: usize, r: VisRowPos, c: VisColumnPos) -> Self {
-    //     r.linear_index(ncol, c).pipe(|idx| Self(idx, idx))
-    // }
+    pub fn is_point(&self) -> bool {
+        self.0 == self.1
+    }
+
+    pub fn union(&self, ncol: usize, other: Self) -> Self {
+        let (top, left) = self.0.row_col(ncol);
+        let (bottom, right) = self.1.row_col(ncol);
+
+        let (other_top, other_left) = other.0.row_col(ncol);
+        let (other_bottom, other_right) = other.1.row_col(ncol);
+
+        let top = top.0.min(other_top.0);
+        let left = left.0.min(other_left.0);
+        let bottom = bottom.0.max(other_bottom.0);
+        let right = right.0.max(other_right.0);
+
+        Self(
+            VisLinearIdx(top * ncol + left),
+            VisLinearIdx(bottom * ncol + right),
+        )
+    }
+
+    pub fn _from_row_col(ncol: usize, r: VisRowPos, c: VisColumnPos) -> Self {
+        r.linear_index(ncol, c).pipe(|idx| Self(idx, idx))
+    }
 }
 
 impl From<VisLinearIdx> for VisSelection {
@@ -81,6 +120,7 @@ impl VisRowPos {
     }
 }
 
+/// TODO: Serialization?
 pub(crate) struct UiState<R> {
     /// Cached number of columns.
     num_columns: usize,
@@ -90,16 +130,13 @@ pub(crate) struct UiState<R> {
 
     /// Unique hash of the viewer. This is to prevent cache invalidation when the viewer
     /// state is changed.
-    viewer_hash: u64,
+    viewer_filter_hash: u64,
 
     /// Visible columns selected by user.
     pub vis_cols: Vec<ColumnIdx>,
 
     /// Column sorting state.
     sort: Vec<(ColumnIdx, IsAscending)>,
-
-    /// Latest interactive cell; Used for keyboard navigation.
-    cc_interactive_cell: VisLinearIdx,
 
     /// Undo queue.
     ///
@@ -111,16 +148,26 @@ pub(crate) struct UiState<R> {
     /// Undo cursor => increment by 1 on every undo, decrement by 1 on redo.
     undo_cursor: usize,
 
-    /// TODO: Clipboard
+    /// Clipboard contents.
+    clipboard: Option<Clipboard<R>>,
 
     /*
 
         SECTION: Cache - Rendering
 
     */
-    /// Cached rows.
-    pub cc_rows: Vec<(RowId, f32)>,
-    cc_row_id_to_vis: HashMap<RowId, VisRowPos>,
+    /// Cached rows. Vector index is `VisRowPos`. Tuple is (row_id,
+    /// cached_row_display_height)
+    pub cc_rows: Vec<RowIdx>,
+
+    /// Cached row heights. Vector index is `VisRowPos`.
+    ///
+    /// WARNING: DO NOT ACCESS THIS DURING RENDERING; as it's taken out for heterogenous
+    /// row height support, therefore invalid during table rendering.
+    pub cc_row_heights: Vec<f32>,
+
+    /// Cached row id to visual row position table for quick lookup.
+    cc_row_id_to_vis: HashMap<RowIdx, VisRowPos>,
 
     /// Spreadsheet is modified during the last validation.
     cc_dirty: bool,
@@ -131,6 +178,15 @@ pub(crate) struct UiState<R> {
 
     /// Number of frames from the last edit. Used to validate sorting.
     cc_num_frame_from_last_edit: usize,
+
+    /// Cached previous number of columns.
+    cc_prev_n_columns: usize,
+
+    /// Latest interactive cell; Used for keyboard navigation.
+    cc_interactive_cell: VisLinearIdx,
+
+    /// Desired selection of next validation
+    cc_desired_selection: Option<Vec<RowIdx>>,
 
     /*
 
@@ -144,6 +200,14 @@ pub(crate) struct UiState<R> {
     pub cci_has_focus: bool,
 }
 
+struct Clipboard<R> {
+    slab: Box<[R]>,
+
+    /// The first tuple element `VisRowPos` is offset from the top-left corner of the
+    /// selection.
+    pastes: Box<[(VisRowOffset, ColumnIdx, RowSlabIndex)]>,
+}
+
 struct UndoArg<R> {
     apply: Command<R>,
     restore: Vec<Command<R>>,
@@ -153,13 +217,15 @@ impl<R> Default for UiState<R> {
     fn default() -> Self {
         Self {
             num_columns: 0,
-            viewer_hash: 0,
+            viewer_filter_hash: 0,
+            clipboard: None,
             viewer_type: std::any::TypeId::of::<()>(),
             vis_cols: Vec::default(),
             sort: Vec::default(),
             cc_cursor: CursorState::Select(default()),
             undo_queue: VecDeque::default(),
             cc_rows: Vec::default(),
+            cc_row_heights: Vec::default(),
             cc_dirty: false,
             undo_cursor: 0,
             cci_selection: None,
@@ -167,6 +233,8 @@ impl<R> Default for UiState<R> {
             cc_interactive_cell: VisLinearIdx(0),
             cc_row_id_to_vis: default(),
             cc_num_frame_from_last_edit: 0,
+            cc_prev_n_columns: 0,
+            cc_desired_selection: None,
         }
     }
 }
@@ -176,37 +244,53 @@ enum CursorState<R> {
     Edit {
         next_focus: bool,
         last_focus: VisColumnPos,
-        row: RowId,
+        row: RowIdx,
         edition: R,
     },
 }
 
-impl<R: Send + Clone> UiState<R> {
+impl<R> UiState<R> {
     pub fn validate_identity<V: RowViewer<R>>(&mut self, vwr: &mut V) {
         let num_columns = vwr.num_columns();
         let vwr_type_id = std::any::TypeId::of::<V>();
         let vwr_hash = AHasher::default().pipe(|mut hsh| {
-            // TODO: When non-static type id  <br/>
-            // std::any::TypeId::of::<V>().hash(&mut hsh);
-
-            vwr.hash(&mut hsh);
+            vwr.hash_row_filter().hash(&mut hsh);
             hsh.finish()
         });
 
+        // Check for nontrivial changes.
         if self.num_columns == num_columns && self.viewer_type == vwr_type_id {
-            if self.viewer_hash != vwr_hash {
-                self.viewer_hash = vwr_hash;
+            // Check for trivial changes which does not require total reconstruction of
+            // UiState.
+
+            // If viewer's filter is changed. It always invalidates current cache.
+            if self.viewer_filter_hash != vwr_hash {
+                self.viewer_filter_hash = vwr_hash;
                 self.cc_dirty = true;
             }
 
-            if !self.is_editing() {
-                self.cc_num_frame_from_last_edit += 1;
+            // Defer validation of cache if it's still editing.
+            {
+                if !self.is_editing() {
+                    self.cc_num_frame_from_last_edit += 1;
+                }
+
+                if self.cc_num_frame_from_last_edit == 2 {
+                    self.cc_dirty |= !self.sort.is_empty();
+                }
             }
 
-            if self.cc_num_frame_from_last_edit == 2 {
-                // When finished editing, if there's any sorting, we should validate the cache.
-                self.cc_dirty |= !self.sort.is_empty() || vwr.has_row_filter();
-            }
+            // Check if any sort config is invalidated.
+            self.cc_dirty |= {
+                let mut any_sort_invalidated = false;
+
+                self.sort.retain(|(c, _)| {
+                    vwr.is_sortable_column(c.0)
+                        .tap(|x| any_sort_invalidated |= !x)
+                });
+
+                any_sort_invalidated
+            };
 
             return;
         }
@@ -214,73 +298,125 @@ impl<R: Send + Clone> UiState<R> {
         // Clear the cache
         *self = Default::default();
         self.viewer_type = vwr_type_id;
-        self.viewer_hash = vwr_hash;
+        self.viewer_filter_hash = vwr_hash;
         self.num_columns = num_columns;
 
         self.vis_cols.extend((0..num_columns).map(ColumnIdx));
         self.cc_dirty = true;
     }
 
-    pub fn validate_cc<V: RowViewer<R>>(&mut self, rows: &mut VecDeque<R>, vwr: &mut V) {
+    pub fn validate_cc<V: RowViewer<R>>(&mut self, rows: &mut [R], vwr: &mut V) {
         if !replace(&mut self.cc_dirty, false) {
+            self.handle_desired_selection();
             return;
         }
 
-        // TODO: Boost performance with `rayon`
+        // XXX: Boost performance with `rayon`?
+        // - Returning `comparator` which is marked as `Sync`
+        // - For this, `R` also need to be sent to multiple threads safely.
+        // - Maybe we need specialization for `R: Send`?
 
         // We should validate the entire cache.
-        let mut it_all_rows = rows
-            .iter()
-            .enumerate()
-            .filter_map(|(i, x)| vwr.filter_row(x).then_some(i))
-            .map(RowId);
+        let filter = vwr.row_filter();
+        self.cc_rows.clear();
+        self.cc_rows.extend(
+            rows.iter()
+                .enumerate()
+                .filter_map(move |(i, x)| filter(x).then_some(i))
+                .map(RowIdx),
+        );
 
-        for (idx, (cc_row, _)) in self.cc_rows.iter_mut().enumerate() {
-            let Some(row) = it_all_rows.next() else {
-                // Clear the rest of the cache.
-                self.cc_rows.drain(idx..);
-                break;
-            };
-
-            *cc_row = row;
-        }
-
-        // If there are more rows left, we should add them.
-        for row in it_all_rows {
-            self.cc_rows.push((row, 20.)); // Just neat default value.
-        }
-
-        // TODO: Sort rows by column
+        let comparator = vwr.cell_comparator();
         for (sort_col, asc) in self.sort.iter().rev() {
-            self.cc_rows.sort_by(|(a, _), (b, _)| {
-                vwr.compare_column_for_sort(&rows[a.0], &rows[b.0], sort_col.0)
-                    .tap_mut(|x| {
-                        if !asc.0 {
-                            *x = x.reverse()
-                        }
-                    })
+            self.cc_rows.sort_by(|a, b| {
+                comparator(&rows[a.0], &rows[b.0], sort_col.0).tap_mut(|x| {
+                    if !asc.0 {
+                        *x = x.reverse()
+                    }
+                })
             });
         }
+
+        // Just refill with neat default height.
+        self.cc_row_heights.resize(self.cc_rows.len(), 20.0);
 
         self.cc_row_id_to_vis.clear();
         self.cc_row_id_to_vis.extend(
             self.cc_rows
                 .iter()
                 .enumerate()
-                .map(|(i, (id, ..))| (*id, VisRowPos(i))),
+                .map(|(i, id)| (*id, VisRowPos(i))),
         );
 
-        // Clear selection.
-        self.cc_cursor = CursorState::Select(Vec::default());
+        if self.handle_desired_selection() {
+            // no-op.
+        } else if let CursorState::Select(cursor) = &mut self.cc_cursor {
+            // Validate cursor range if it's still in range.
+
+            let old_cols = self.cc_prev_n_columns;
+            let new_rows = self.cc_rows.len();
+            let new_cols = self.num_columns;
+            self.cc_prev_n_columns = self.num_columns;
+
+            cursor.retain_mut(|sel| {
+                let (old_min_r, old_min_c) = sel.0.row_col(old_cols);
+                if old_min_r.0 >= new_rows || old_min_c.0 >= new_cols {
+                    return false;
+                }
+
+                let (mut old_max_r, mut old_max_c) = sel.1.row_col(old_cols);
+                old_max_r.0 = old_max_r.0.min(new_rows.saturating_sub(1));
+                old_max_c.0 = old_max_c.0.min(new_cols.saturating_sub(1));
+
+                let min = old_min_r.linear_index(new_cols, old_min_c);
+                let max = old_max_r.linear_index(new_cols, old_max_c);
+                *sel = VisSelection(min, max);
+
+                true
+            });
+        } else {
+            self.cc_cursor = CursorState::Select(Vec::default());
+        }
 
         // Prevent overflow.
         self.validate_interactive_cell(self.vis_cols.len());
     }
 
+    fn handle_desired_selection(&mut self) -> bool {
+        let Some((next_sel, sel)) = self.cc_desired_selection.take().and_then(|x| {
+            if let CursorState::Select(vec) = &mut self.cc_cursor {
+                Some((x, vec))
+            } else {
+                None
+            }
+        }) else {
+            return false;
+        };
+
+        // If there's any desired selections present for next validation, apply it.
+
+        sel.clear();
+        let ncol = self.vis_cols.len();
+
+        for row_id in next_sel {
+            let vis_row = self.cc_row_id_to_vis[&row_id];
+            let p_left = vis_row.linear_index(ncol, VisColumnPos(0));
+            let p_right = vis_row.linear_index(ncol, VisColumnPos(ncol - 1));
+
+            sel.push(VisSelection(p_left, p_right));
+        }
+
+        true
+    }
+
+    pub fn force_mark_dirty(&mut self) {
+        self.cc_dirty = true;
+    }
+
     /// - `None`: Not editing this row
     /// - `Some(true)`: Freshly started editing
     /// - `Some(false)`: Already editing
-    pub fn row_is_fresh_edit(&mut self, row_id: RowId) -> Option<Option<VisColumnPos>> {
+    pub fn row_is_fresh_edit(&mut self, row_id: RowIdx) -> Option<Option<VisColumnPos>> {
         let CursorState::Edit {
             next_focus,
             row,
@@ -354,10 +490,10 @@ impl<R: Send + Clone> UiState<R> {
         }
     }
 
-    pub fn cci_sel_take(&mut self) -> Option<VisSelection> {
-        self.cci_selection
-            .take()
-            .map(|(pivot, current)| VisSelection::from_points(self.vis_cols.len(), pivot, current))
+    pub fn cci_sel_update_row(&mut self, row: VisRowPos) {
+        [0, self.vis_cols.len() - 1].map(|col| {
+            self.cci_sel_update(row.linear_index(self.vis_cols.len(), VisColumnPos(col)))
+        });
     }
 
     pub fn has_cci_selection(&self) -> bool {
@@ -368,21 +504,21 @@ impl<R: Send + Clone> UiState<R> {
         sel.contains(self.vis_cols.len(), row, col)
     }
 
-    pub fn push_new_command(
+    pub fn push_new_command<V: RowViewer<R>>(
         &mut self,
-        sheet: &mut Spreadsheet<R>,
-        mut command: Command<R>,
+        table: &mut DataTable<R>,
+        vwr: &mut V,
+        command: Command<R>,
         capacity: usize,
     ) {
-        if self.is_editing() && !matches!(command, Command::CancelEdit | Command::CommitEdit) {
+        if self.is_editing() && !matches!(command, Command::CcCancelEdit | Command::CcCommitEdit) {
             // If any non-editing command is pushed while editing, commit it first
-            self.push_new_command(sheet, Command::CommitEdit, capacity);
+            self.push_new_command(table, vwr, Command::CcCommitEdit, capacity);
         }
 
         // Generate redo argument from command
         let restore = match command {
-            Command::Noop => unimplemented!("Do not make noop command manually!"),
-            Command::HideColumn(column_idx) => {
+            Command::CcHideColumn(column_idx) => {
                 if self.vis_cols.len() == 1 {
                     return;
                 }
@@ -391,17 +527,17 @@ impl<R: Send + Clone> UiState<R> {
                 let idx = vis_cols.iter().position(|x| *x == column_idx).unwrap();
                 vis_cols.remove(idx);
 
-                command = Command::SetVisibleColumns(vis_cols);
-                vec![Command::SetVisibleColumns(self.vis_cols.clone())]
+                self.push_new_command(table, vwr, Command::SetVisibleColumns(vis_cols), capacity);
+                return;
             }
-            Command::ShowColumn { what, at } => {
+            Command::CcShowColumn { what, at } => {
                 assert!(self.vis_cols.iter().all(|x| *x != what));
 
                 let mut vis_cols = self.vis_cols.clone();
                 vis_cols.insert(at.0, what);
 
-                command = Command::SetVisibleColumns(vis_cols);
-                vec![Command::SetVisibleColumns(self.vis_cols.clone())]
+                self.push_new_command(table, vwr, Command::SetVisibleColumns(vis_cols), capacity);
+                return;
             }
             Command::SetVisibleColumns(ref value) => {
                 if self.vis_cols.iter().eq(value.iter()) {
@@ -410,7 +546,7 @@ impl<R: Send + Clone> UiState<R> {
 
                 vec![Command::SetVisibleColumns(self.vis_cols.clone())]
             }
-            Command::ReorderColumn { from, to } => {
+            Command::CcReorderColumn { from, to } => {
                 if from == to || to.0 > self.vis_cols.len() {
                     // Reorder may deliver invalid parameter if there's multiple data
                     // tables present at the same time; as the drag drop payload are
@@ -426,10 +562,10 @@ impl<R: Send + Clone> UiState<R> {
                     vis_cols.remove(from.0).pipe(|x| vis_cols.insert(to.0, x));
                 }
 
-                command = Command::SetVisibleColumns(vis_cols);
-                vec![Command::SetVisibleColumns(self.vis_cols.clone())]
+                self.push_new_command(table, vwr, Command::SetVisibleColumns(vis_cols), capacity);
+                return;
             }
-            Command::EditStart(row_id, column_pos, current) => {
+            Command::CcEditStart(row_id, column_pos, current) => {
                 // EditStart command is directly applied.
                 self.cc_cursor = CursorState::Edit {
                     edition: *current,
@@ -445,29 +581,46 @@ impl<R: Send + Clone> UiState<R> {
                 // No redo argument is generated.
                 return;
             }
-            ref cmd @ (Command::CancelEdit | Command::CommitEdit) => {
+            ref cmd @ (Command::CcCancelEdit | Command::CcCommitEdit) => {
                 // This edition state become selection. Restorat
                 let Some((row_id, edition, _)) = self.try_take_edition() else {
-                    // TODO: Errmsg - No row is being edited
                     return;
                 };
 
-                if matches!(cmd, Command::CancelEdit) {
+                if matches!(cmd, Command::CcCancelEdit) {
                     // Cancellation does not affect to any state.
                     return;
                 }
 
-                command = Command::SetRowValue(row_id, edition.into());
+                // Change command type of self.
+                self.push_new_command(
+                    table,
+                    vwr,
+                    Command::SetRowValue(row_id, edition.into()),
+                    capacity,
+                );
 
-                // Restoration become simple selection.
+                return;
+            }
+
+            Command::SetRowValue(row_id, _) => {
                 vec![Command::SetRowValue(
                     row_id,
-                    sheet.rows[row_id.0].clone().into(),
+                    vwr.row_clone(&table.rows[row_id.0]).into(),
                 )]
             }
-            Command::SetRowValue(_, _) => todo!(),
-            Command::SetRowValues(_) => todo!(),
-            Command::SetCells(_) => todo!(),
+
+            Command::SetCells { ref values, .. } => {
+                let mut keys = Vec::from_iter(values.iter().map(|(r, ..)| *r));
+                keys.dedup();
+
+                keys.iter()
+                    .map(|row_id| {
+                        Command::SetRowValue(*row_id, vwr.row_clone(&table.rows[row_id.0]).into())
+                    })
+                    .collect()
+            }
+
             Command::SetColumnSort(ref sort) => {
                 if self.sort.iter().eq(sort.iter()) {
                     return;
@@ -475,9 +628,30 @@ impl<R: Send + Clone> UiState<R> {
 
                 vec![Command::SetColumnSort(self.sort.clone())]
             }
-            Command::CacheSetSelection(sel) => {
+            Command::CcSetSelection(sel) => {
+                if !sel.is_empty() {
+                    self.cc_interactive_cell = sel[0].0;
+                }
+
                 self.cc_cursor = CursorState::Select(sel);
                 return;
+            }
+            Command::InsertRows(pivot, ref values) => {
+                let values = (pivot.0..pivot.0 + values.len()).map(RowIdx).collect();
+                vec![Command::RemoveRow(values)]
+            }
+            Command::RemoveRow(ref indices) => {
+                let values = indices
+                    .iter()
+                    .map(|x| vwr.row_clone(&table.rows[x.0]))
+                    .collect();
+                vec![Command::InsertRows(RowIdx(indices[0].0), values)]
+            }
+            Command::SetCell(_, row_id, _) => {
+                vec![Command::SetRowValue(
+                    row_id,
+                    vwr.row_clone(&table.rows[row_id.0]).into(),
+                )]
             }
         };
 
@@ -492,7 +666,7 @@ impl<R: Send + Clone> UiState<R> {
         self.undo_cursor = 0;
 
         // Apply the command.
-        self.cmd_apply(sheet, &command);
+        self.cmd_apply(table, vwr, &command);
 
         // Push the command to the queue.
         self.undo_queue.push_front(UndoArg {
@@ -501,9 +675,13 @@ impl<R: Send + Clone> UiState<R> {
         });
     }
 
-    fn cmd_apply(&mut self, sheet: &mut Spreadsheet<R>, cmd: &Command<R>) {
+    fn cmd_apply<V: RowViewer<R>>(
+        &mut self,
+        table: &mut DataTable<R>,
+        vwr: &mut V,
+        cmd: &Command<R>,
+    ) {
         match cmd {
-            Command::Noop => {}
             Command::SetVisibleColumns(cols) => {
                 self.validate_interactive_cell(cols.len());
                 self.vis_cols.clear();
@@ -515,54 +693,90 @@ impl<R: Send + Clone> UiState<R> {
                 self.sort.extend(new_sort.iter().cloned());
                 self.cc_dirty = true;
             }
-            Command::HideColumn(_) => unreachable!(),
-            Command::ShowColumn { .. } => unreachable!(),
-            Command::ReorderColumn { .. } => unreachable!(),
-            Command::EditStart(..) => unreachable!(),
-            Command::CommitEdit | Command::CancelEdit => unreachable!(),
             Command::SetRowValue(row_id, value) => {
                 self.cc_num_frame_from_last_edit = 0;
-                sheet.dirty_flag = true;
-                sheet.rows[row_id.0] = (**value).clone();
+                table.dirty_flag = true;
+                table.rows[row_id.0] = vwr.row_clone(value);
             }
-            Command::SetRowValues(_) => {
+            Command::SetCell(value, row, col) => {
                 self.cc_num_frame_from_last_edit = 0;
-                sheet.dirty_flag = true;
-                todo!()
+                table.dirty_flag = true;
+                vwr.cell_set_value(value, &mut table.rows[row.0], col.0);
             }
-            Command::SetCells(_) => {
+            Command::SetCells { slab, values } => {
                 self.cc_num_frame_from_last_edit = 0;
-                sheet.dirty_flag = true;
-                todo!()
+                table.dirty_flag = true;
+
+                for (row, col, value_id) in values.iter() {
+                    vwr.cell_set_value(&slab[value_id.0], &mut table.rows[row.0], col.0);
+                }
             }
-            Command::CacheSetSelection(_) => unreachable!(),
+            Command::InsertRows(pos, values) => {
+                self.cc_dirty = true; // It invalidates all current `RowId` occurences.
+                table.dirty_flag = true;
+
+                table
+                    .rows
+                    .splice(pos.0..pos.0, values.iter().map(|x| vwr.row_clone(x)));
+
+                self.queue_select_rows((pos.0..pos.0 + values.len()).map(RowIdx));
+            }
+            Command::RemoveRow(values) => {
+                debug_assert!(values.windows(2).all(|x| x[0] < x[1]));
+                self.cc_dirty = true; // It invalidates all current `RowId` occurences.
+                table.dirty_flag = true;
+
+                let mut index = 0;
+                table.rows.retain(|_| {
+                    let idx_now = index.tap(|_| index += 1);
+                    values.binary_search(&RowIdx(idx_now)).is_err()
+                });
+
+                self.queue_select_rows([]);
+            }
+            Command::CcHideColumn(_)
+            | Command::CcShowColumn { .. }
+            | Command::CcReorderColumn { .. }
+            | Command::CcEditStart(..)
+            | Command::CcCommitEdit
+            | Command::CcCancelEdit
+            | Command::CcSetSelection(_) => unreachable!(),
         }
+    }
+
+    fn queue_select_rows(&mut self, rows: impl IntoIterator<Item = RowIdx>) {
+        self.cc_desired_selection = Some(rows.into_iter().collect());
     }
 
     fn validate_interactive_cell(&mut self, new_num_column: usize) {
         let (r, c) = self.cc_interactive_cell.row_col(self.vis_cols.len());
         let rmax = self.cc_rows.len().saturating_sub(1);
-        let cmax = self.vis_cols.len().saturating_sub(1);
+        let clen = self.vis_cols.len();
 
         self.cc_interactive_cell =
-            VisLinearIdx(r.0.min(rmax) * cmax + c.0.min(new_num_column.saturating_sub(1)));
+            VisLinearIdx(r.0.min(rmax) * clen + c.0.min(new_num_column.saturating_sub(1)));
     }
 
-    fn take_unwrap_selection(&mut self) -> Vec<VisSelection> {
-        match replace(&mut self.cc_cursor, CursorState::Select(Vec::default())) {
-            CursorState::Select(selections) => selections,
-            _ => unreachable!(),
-        }
+    pub fn has_clipboard_contents(&self) -> bool {
+        self.clipboard.is_some()
     }
 
-    fn cursor_as_selection(&self) -> Option<&[VisSelection]> {
+    pub fn has_undo(&self) -> bool {
+        self.undo_cursor < self.undo_queue.len()
+    }
+
+    pub fn has_redo(&self) -> bool {
+        self.undo_cursor > 0
+    }
+
+    pub fn cursor_as_selection(&self) -> Option<&[VisSelection]> {
         match &self.cc_cursor {
             CursorState::Select(x) => Some(x),
             CursorState::Edit { .. } => None,
         }
     }
 
-    fn try_take_edition(&mut self) -> Option<(RowId, R, VisColumnPos)> {
+    fn try_take_edition(&mut self) -> Option<(RowIdx, R, VisColumnPos)> {
         if matches!(self.cc_cursor, CursorState::Edit { .. }) {
             match replace(&mut self.cc_cursor, CursorState::Select(Vec::default())) {
                 CursorState::Edit {
@@ -595,7 +809,7 @@ impl<R: Send + Clone> UiState<R> {
         }
     }
 
-    pub fn undo(&mut self, sheet: &mut Spreadsheet<R>) -> bool {
+    pub fn undo<V: RowViewer<R>>(&mut self, table: &mut DataTable<R>, vwr: &mut V) -> bool {
         if self.undo_cursor == self.undo_queue.len() {
             return false;
         }
@@ -604,7 +818,7 @@ impl<R: Send + Clone> UiState<R> {
         {
             let item = &queue[self.undo_cursor];
             for cmd in item.restore.iter() {
-                self.cmd_apply(sheet, cmd);
+                self.cmd_apply(table, vwr, cmd);
             }
             self.undo_cursor += 1;
         }
@@ -613,7 +827,7 @@ impl<R: Send + Clone> UiState<R> {
         true
     }
 
-    pub fn redo(&mut self, sheet: &mut Spreadsheet<R>) -> bool {
+    pub fn redo<V: RowViewer<R>>(&mut self, table: &mut DataTable<R>, vwr: &mut V) -> bool {
         if self.undo_cursor == 0 {
             return false;
         }
@@ -621,59 +835,246 @@ impl<R: Send + Clone> UiState<R> {
         let queue = take(&mut self.undo_queue);
         {
             self.undo_cursor -= 1;
-            self.cmd_apply(sheet, &queue[self.undo_cursor].apply);
+            self.cmd_apply(table, vwr, &queue[self.undo_cursor].apply);
         }
         self.undo_queue = queue;
 
         true
     }
 
+    pub fn set_interactive_cell(&mut self, row: VisRowPos, col: VisColumnPos) {
+        self.cc_interactive_cell = row.linear_index(self.vis_cols.len(), col);
+    }
+
     pub fn try_apply_ui_action(
         &mut self,
-        sheet: &mut Spreadsheet<R>,
-        viewer: &mut impl RowViewer<R>,
+        table: &mut DataTable<R>,
+        vwr: &mut impl RowViewer<R>,
         action: UiAction,
     ) -> Vec<Command<R>> {
         fn empty<T, R>(_: T) -> Vec<Command<R>> {
             default()
         }
 
+        let (ic_r, ic_c) = self.cc_interactive_cell.row_col(self.vis_cols.len());
         match action {
             UiAction::SelectionStartEditing => {
-                let (r, c) = self.cc_interactive_cell.row_col(self.vis_cols.len());
-                let row_id = self.cc_rows[r.0].0;
-                let row = sheet.rows[row_id.0].clone();
-                vec![Command::EditStart(row_id, c, Box::new(row))]
+                let row_id = self.cc_rows[ic_r.0];
+                let row = vwr.row_clone(&table.rows[row_id.0]);
+                vec![Command::CcEditStart(row_id, ic_c, Box::new(row))]
             }
-            UiAction::CancelEdition => vec![Command::CancelEdit],
-            UiAction::CommitEdition => vec![Command::CommitEdit],
+            UiAction::CancelEdition => vec![Command::CcCancelEdit],
+            UiAction::CommitEdition => vec![Command::CcCommitEdit],
             UiAction::CommitEditionAndMove(dir) => {
-                let (src_r, ..) = self.cc_interactive_cell.row_col(self.vis_cols.len());
                 let pos = self.moved_position(self.cc_interactive_cell, dir);
                 let (r, c) = pos.row_col(self.vis_cols.len());
-                let row_id = self.cc_rows[r.0].0;
-                let row_value = if self.is_editing() && src_r == r {
-                    self.unwrap_editing_row_data().clone()
+                let row_id = self.cc_rows[r.0];
+                let row_value = if self.is_editing() && ic_r == r {
+                    vwr.row_clone(self.unwrap_editing_row_data())
                 } else {
-                    sheet.rows[row_id.0].clone()
+                    vwr.row_clone(&table.rows[row_id.0])
                 };
 
                 vec![
-                    Command::CommitEdit,
-                    Command::EditStart(row_id, c, row_value.into()),
+                    Command::CcCommitEdit,
+                    Command::CcEditStart(row_id, c, row_value.into()),
                 ]
             }
-            UiAction::MoveSelection(_) => todo!(),
-            UiAction::Undo => self.undo(sheet).pipe(empty),
-            UiAction::Redo => self.redo(sheet).pipe(empty),
-            UiAction::CopySelection => todo!(),
-            UiAction::CutSelection => todo!(),
-            UiAction::InsertRowBelow => todo!(),
-            UiAction::InsertRowAbove => todo!(),
-            UiAction::DuplicateRow => todo!(),
-            UiAction::SelectionDuplicateValues => todo!(),
-            UiAction::SelectionGenerateValues => todo!(),
+            UiAction::MoveSelection(dir) => {
+                let pos = self.moved_position(self.cc_interactive_cell, dir);
+                vec![Command::CcSetSelection(vec![VisSelection(pos, pos)])]
+            }
+            UiAction::Undo => self.undo(table, vwr).pipe(empty),
+            UiAction::Redo => self.redo(table, vwr).pipe(empty),
+            UiAction::CopySelection | UiAction::CutSelection => {
+                let sels = self.collect_selection();
+                self.clipboard = None;
+
+                if sels.is_empty() {
+                    return vec![]; // we do nothing.
+                }
+
+                // Copy contents to clipboard
+                let offset = sels.first().unwrap().0;
+                let mut slab = Vec::with_capacity(10);
+                let mut vis_map = HashMap::with_capacity(10);
+
+                for vis_row in self.collect_selected_rows() {
+                    vis_map.insert(vis_row, slab.len());
+                    slab.push(vwr.row_clone(&table.rows[self.cc_rows[vis_row.0].0]));
+                }
+
+                self.clipboard = Some(Clipboard {
+                    slab: slab.into_boxed_slice(),
+                    pastes: sels
+                        .iter()
+                        .map(|(v_r, v_c)| {
+                            (
+                                VisRowOffset(v_r.0 - offset.0),
+                                self.vis_cols[v_c.0],
+                                RowSlabIndex(vis_map[&v_r]),
+                            )
+                        })
+                        .collect(),
+                });
+
+                // TODO: Interact with system clipboard?
+                // - Then we need a way to serialize contents to string.
+
+                if action == UiAction::CutSelection {
+                    self.try_apply_ui_action(table, vwr, UiAction::DeleteSelection)
+                } else {
+                    vec![]
+                }
+            }
+            UiAction::SelectionDuplicateValues => {
+                let pivot_row = vwr.row_clone(&table.rows[self.cc_rows[ic_r.0].0]);
+                let sels = self.collect_selection();
+
+                vec![Command::SetCells {
+                    slab: [pivot_row].into(),
+                    values: sels
+                        .into_iter()
+                        .map(|(r, c)| (self.cc_rows[r.0], self.vis_cols[c.0], RowSlabIndex(0)))
+                        .collect(),
+                }]
+            }
+            UiAction::PasteInPlace => {
+                let Some(clip) = &self.clipboard else {
+                    return vec![];
+                };
+
+                let values =
+                    Vec::from_iter(clip.pastes.iter().filter_map(|(offset, col, slab_id)| {
+                        let vis_r = VisRowPos(ic_r.0 + offset.0);
+                        (vis_r.0 < self.cc_rows.len())
+                            .then(|| (self.cc_rows[vis_r.0], *col, *slab_id))
+                    }));
+
+                let rows = Vec::from_iter(values.iter().map(|(r, ..)| *r)).tap_mut(|x| x.dedup());
+                self.cc_desired_selection = Some(rows);
+
+                vec![Command::SetCells {
+                    slab: clip.slab.iter().map(|x| vwr.row_clone(x)).collect(),
+                    values: values.into_boxed_slice(),
+                }]
+            }
+            UiAction::PasteInsert => {
+                let Some(clip) = &self.clipboard else {
+                    return vec![];
+                };
+
+                let mut last = usize::MAX;
+                let mut rows = clip
+                    .pastes
+                    .iter()
+                    .filter(|&(offset, ..)| replace(&mut last, offset.0) != offset.0)
+                    .map(|(offset, ..)| (*offset, vwr.row_empty()))
+                    .collect::<BTreeMap<_, _>>();
+
+                for (offset, column, slab_id) in &*clip.pastes {
+                    vwr.cell_set_value(
+                        &clip.slab[slab_id.0],
+                        rows.get_mut(offset).unwrap(),
+                        column.0,
+                    );
+                }
+
+                let pos = if self.sort.is_empty() {
+                    self.cc_rows[ic_r.0].tap_mut(|x| x.0 += 1)
+                } else {
+                    RowIdx(table.rows.len())
+                };
+
+                let row_values = rows.into_values().collect();
+                vec![Command::InsertRows(pos, row_values)]
+            }
+            UiAction::DuplicateRow => {
+                let rows = self
+                    .collect_selected_rows()
+                    .into_iter()
+                    .map(|x| self.cc_rows[x.0])
+                    .map(|r| vwr.row_clone(&table.rows[r.0]))
+                    .collect();
+
+                let pos = if self.sort.is_empty() {
+                    self.cc_rows[ic_r.0].tap_mut(|x| x.0 += 1)
+                } else {
+                    RowIdx(table.rows.len())
+                };
+
+                vec![Command::InsertRows(pos, rows)]
+            }
+            UiAction::DeleteSelection => {
+                let default = vwr.row_empty();
+                let sels = self.collect_selection();
+                let slab = vec![default].into_boxed_slice();
+
+                vec![Command::SetCells {
+                    slab,
+                    values: sels
+                        .into_iter()
+                        .map(|(r, c)| (self.cc_rows[r.0], self.vis_cols[c.0], RowSlabIndex(0)))
+                        .collect(),
+                }]
+            }
+            UiAction::DeleteRow => {
+                let rows = self
+                    .collect_selected_rows()
+                    .into_iter()
+                    .map(|x| self.cc_rows[x.0])
+                    .collect();
+
+                vec![Command::RemoveRow(rows)]
+            }
+            UiAction::SelectAll => {
+                if self.cc_rows.is_empty() {
+                    return vec![];
+                }
+
+                vec![Command::CcSetSelection(vec![VisSelection(
+                    VisLinearIdx(0),
+                    VisRowPos(self.cc_rows.len().saturating_sub(1))
+                        .linear_index(self.vis_cols.len(), VisColumnPos(self.vis_cols.len() - 1)),
+                )])]
+            }
         }
+    }
+
+    fn collect_selection(&self) -> BTreeSet<(VisRowPos, VisColumnPos)> {
+        let mut set = BTreeSet::new();
+
+        if let CursorState::Select(selections) = &self.cc_cursor {
+            for sel in selections.iter() {
+                let (top, left) = sel.0.row_col(self.vis_cols.len());
+                let (bottom, right) = sel.1.row_col(self.vis_cols.len());
+
+                for r in top.0..=bottom.0 {
+                    for c in left.0..=right.0 {
+                        set.insert((VisRowPos(r), VisColumnPos(c)));
+                    }
+                }
+            }
+        }
+
+        set
+    }
+
+    fn collect_selected_rows(&self) -> BTreeSet<VisRowPos> {
+        let mut rows = BTreeSet::new();
+
+        if let CursorState::Select(selections) = &self.cc_cursor {
+            for sel in selections.iter() {
+                let (top, _) = sel.0.row_col(self.vis_cols.len());
+                let (bottom, _) = sel.1.row_col(self.vis_cols.len());
+
+                for r in top.0..=bottom.0 {
+                    rows.insert(VisRowPos(r));
+                }
+            }
+        }
+
+        rows
     }
 
     fn moved_position(&self, pos: VisLinearIdx, dir: MoveDirection) -> VisLinearIdx {
@@ -708,29 +1109,54 @@ impl<R: Send + Clone> UiState<R> {
         VisLinearIdx(nr * self.vis_cols.len() + nc)
     }
 
-    pub fn add_noti_toast(&self, msg: impl Fn(&mut egui::Ui) + Send + 'static) {
-        todo!()
-    }
+    pub fn cci_take_selection(&mut self, mods: egui::Modifiers) -> Option<Vec<VisSelection>> {
+        let ncol = self.vis_cols.len();
+        let cci_sel = self
+            .cci_selection
+            .take()
+            .map(|(_0, _1)| VisSelection::from_points(ncol, _0, _1))?;
 
-    pub fn log_warn(&self, msg: impl Into<String>) {
-        let msg = msg.into();
-        self.add_noti_toast(move |ui| {
-            ui.label(msg.as_str());
-        });
+        if mods.is_none() {
+            return Some(vec![cci_sel]);
+        }
+
+        let mut sel = self.cursor_as_selection().unwrap_or_default().to_owned();
+        let idx_contains = sel.iter().position(|x| x.contains_rect(ncol, cci_sel));
+        if sel.is_empty() {
+            sel.push(cci_sel);
+            return Some(sel);
+        }
+
+        if mods.command_only() {
+            if let Some(idx) = idx_contains {
+                sel.remove(idx);
+            } else {
+                sel.push(cci_sel);
+            }
+        }
+
+        if mods.cmd_ctrl_matches(Modifiers::SHIFT) {
+            let last = sel.last_mut().unwrap();
+            if cci_sel.is_point() && last.is_point() {
+                *last = last.union(ncol, cci_sel);
+            } else if idx_contains.is_none() {
+                sel.push(cci_sel);
+            };
+        }
+
+        Some(sel)
     }
 }
 
 /* ------------------------------------------ Commands ------------------------------------------ */
 
 pub(crate) enum Command<R> {
-    Noop,
-
-    HideColumn(ColumnIdx),
-    ShowColumn {
+    CcHideColumn(ColumnIdx),
+    CcShowColumn {
         what: ColumnIdx,
         at: VisColumnPos,
     },
-    ReorderColumn {
+    CcReorderColumn {
         from: VisColumnPos,
         to: VisColumnPos,
     },
@@ -738,13 +1164,19 @@ pub(crate) enum Command<R> {
     SetColumnSort(Vec<(ColumnIdx, IsAscending)>),
     SetVisibleColumns(Vec<ColumnIdx>),
 
-    CacheSetSelection(Vec<VisSelection>), // Cache - Set Selection
+    CcSetSelection(Vec<VisSelection>), // Cache - Set Selection
 
-    SetRowValue(RowId, Box<R>),
-    SetRowValues(Vec<(RowId, Arc<R>)>),
-    SetCells(Vec<(RowId, Vec<ColumnIdx>, Arc<R>)>),
+    SetRowValue(RowIdx, Box<R>),
+    SetCells {
+        slab: Box<[R]>,
+        values: Box<[(RowIdx, ColumnIdx, RowSlabIndex)]>,
+    },
+    SetCell(Box<R>, RowIdx, ColumnIdx),
 
-    EditStart(RowId, VisColumnPos, Box<R>),
-    CancelEdit,
-    CommitEdit,
+    InsertRows(RowIdx, Box<[R]>),
+    RemoveRow(Vec<RowIdx>),
+
+    CcEditStart(RowIdx, VisColumnPos, Box<R>),
+    CcCancelEdit,
+    CcCommitEdit,
 }

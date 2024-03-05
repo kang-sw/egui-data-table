@@ -1,11 +1,11 @@
 use std::iter::repeat_with;
 
+use egui::Sense;
 use egui_data_table::RowViewer;
 use tap::prelude::Pipe;
 
 /* ----------------------------------------- Data Scheme ---------------------------------------- */
 
-#[derive(Hash)]
 struct Viewer {
     filter: String,
 }
@@ -24,38 +24,41 @@ enum Grade {
 /* ------------------------------------ Viewer Implementation ----------------------------------- */
 
 impl RowViewer<Row> for Viewer {
-    fn num_columns(&self) -> usize {
+    fn num_columns(&mut self) -> usize {
         4
     }
 
-    fn column_name(&self, column: usize) -> &str {
+    fn column_name(&mut self, column: usize) -> &str {
         ["Name", "Age", "Is Student", "Grade"][column]
     }
 
-    fn is_sortable_column(&self, column: usize) -> bool {
+    fn is_sortable_column(&mut self, column: usize) -> bool {
         [true, true, false, true][column]
     }
 
-    fn compare_column_for_sort(
-        &self,
-        row_l: &Row,
-        row_r: &Row,
-        column: usize,
-    ) -> std::cmp::Ordering {
-        match column {
-            0 => row_l.0.cmp(&row_r.0),
-            1 => row_l.1.cmp(&row_r.1),
-            2 => unreachable!(),
-            3 => row_l.3.cmp(&row_r.3),
-            _ => unreachable!(),
+    fn cell_comparator(&mut self) -> fn(&Row, &Row, usize) -> std::cmp::Ordering {
+        fn cmp(row_l: &Row, row_r: &Row, column: usize) -> std::cmp::Ordering {
+            match column {
+                0 => row_l.0.cmp(&row_r.0),
+                1 => row_l.1.cmp(&row_r.1),
+                2 => unreachable!(),
+                3 => row_l.3.cmp(&row_r.3),
+                _ => unreachable!(),
+            }
         }
+
+        cmp
     }
 
-    fn empty_row(&mut self) -> Row {
+    fn row_empty(&mut self) -> Row {
         Row("".to_string(), 0, false, Grade::F)
     }
 
-    fn set_column_value(&mut self, src: &Row, dst: &mut Row, column: usize) {
+    fn row_clone(&mut self, row: &Row) -> Row {
+        row.clone()
+    }
+
+    fn cell_set_value(&mut self, src: &Row, dst: &mut Row, column: usize) {
         match column {
             0 => dst.0 = src.0.clone(),
             1 => dst.1 = src.1,
@@ -98,7 +101,17 @@ impl RowViewer<Row> for Viewer {
         }
     }
 
-    fn cell_edit(
+    fn cell_view_dnd_response(
+        &mut self,
+        _row: &Row,
+        _column: usize,
+        resp: &egui::Response,
+    ) -> Option<Box<Row>> {
+        resp.dnd_release_payload::<String>()
+            .map(|x| Box::new(Row((*x).clone(), 9999, false, Grade::A)))
+    }
+
+    fn cell_editor(
         &mut self,
         ui: &mut egui::Ui,
         row: &mut Row,
@@ -137,26 +150,26 @@ impl RowViewer<Row> for Viewer {
         None
     }
 
-    fn filter_row(&self, row: &Row) -> bool {
-        row.0.contains(&self.filter)
+    fn hash_row_filter(&mut self) -> &impl std::hash::Hash {
+        &self.filter
     }
 
-    fn has_row_filter(&self) -> bool {
-        true
+    fn row_filter(&mut self) -> impl Fn(&Row) -> bool {
+        |r| r.0.contains(&self.filter)
     }
 }
 
 /* ------------------------------------------ View Loop ----------------------------------------- */
 
 struct DemoApp {
-    sheet: egui_data_table::Spreadsheet<Row>,
+    table: egui_data_table::DataTable<Row>,
     viewer: Viewer,
 }
 
 impl Default for DemoApp {
     fn default() -> Self {
         Self {
-            sheet: {
+            table: {
                 let mut rng = fastrand::Rng::new();
                 let mut name_gen = names::Generator::with_naming(names::Name::Numbered);
 
@@ -185,6 +198,12 @@ impl Default for DemoApp {
 
 impl DemoApp {
     fn tick(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        fn is_send<T: Send>(_: &T) {}
+        fn is_sync<T: Sync>(_: &T) {}
+
+        is_send(&self.table);
+        is_sync(&self.table);
+
         egui::TopBottomPanel::top("MenuBar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 egui::widgets::global_dark_light_mode_buttons(ui);
@@ -193,13 +212,19 @@ impl DemoApp {
 
                 ui.label("Name Filter");
                 ui.text_edit_singleline(&mut self.viewer.filter);
+
+                ui.add(egui::Label::new("Drag Me!").sense(Sense::drag()))
+                    .dnd_set_drag_payload(String::from("Hallo~"));
             })
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.style_mut().debug.debug_on_hover_with_all_modifiers = true;
 
-            egui_data_table::Renderer::new(&mut self.sheet, &mut self.viewer).show(ui);
+            ui.add(egui_data_table::Renderer::new(
+                &mut self.table,
+                &mut self.viewer,
+            ));
         });
     }
 }

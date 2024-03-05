@@ -9,7 +9,6 @@ edition = "2021"
 [dependencies]
 egui = "0.26"
 egui_extras = { version = "0.26", default-features = false }
-indexmap = "2"
 tap = "1"
 
 [dev-dependencies]

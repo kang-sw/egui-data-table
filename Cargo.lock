@@ -976,7 +976,6 @@ dependencies = [
  "egui",
  "egui_extras",
  "fastrand 2.0.1",
- "indexmap",
  "names",
  "tap",
 ]

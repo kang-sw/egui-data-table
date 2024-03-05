@@ -1,15 +1,12 @@
-use std::{
-    iter::repeat_with,
-    mem::{take, ManuallyDrop},
-};
+use std::{iter::repeat_with, mem::take};
 
-use egui::{Align, Color32, Layout, PointerButton, Rect, Response, RichText, Sense, Stroke};
+use egui::{Align, Color32, Event, Layout, PointerButton, Rect, Response, RichText, Sense, Stroke};
 use egui_extras::Column;
 use tap::prelude::{Pipe, Tap};
 
 use crate::{
     viewer::{EditorAction, MoveDirection, RowViewer, TrivialConfig},
-    Spreadsheet, UiAction,
+    DataTable, UiAction,
 };
 
 use self::state::*;
@@ -20,27 +17,32 @@ pub(crate) mod state;
 
 /* ------------------------------------------ Rendering ----------------------------------------- */
 
-pub struct Renderer<'a, R: Send + Clone, V: RowViewer<R>> {
-    sheet: &'a mut Spreadsheet<R>,
+pub struct Renderer<'a, R, V: RowViewer<R>> {
+    table: &'a mut DataTable<R>,
     viewer: &'a mut V,
-    state: ManuallyDrop<Box<UiState<R>>>,
+    state: Option<Box<UiState<R>>>,
 
     config: TrivialConfig,
 }
 
-impl<'a, R: Send + Clone, V: RowViewer<R>> egui::Widget for Renderer<'a, R, V> {
+impl<'a, R, V: RowViewer<R>> egui::Widget for Renderer<'a, R, V> {
     fn ui(self, ui: &mut egui::Ui) -> Response {
         self.show(ui)
     }
 }
 
-impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
-    pub fn new(sheet: &'a mut Spreadsheet<R>, viewer: &'a mut V) -> Self {
+impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
+    pub fn new(table: &'a mut DataTable<R>, viewer: &'a mut V) -> Self {
         Self {
-            state: ManuallyDrop::new(sheet.ui.take().unwrap_or_default()).tap_mut(|x| {
+            state: Some(table.ui.take().unwrap_or_default().tap_mut(|x| {
+                if table.rows.is_empty() {
+                    table.rows.push(viewer.row_empty());
+                    x.force_mark_dirty();
+                }
+
                 x.validate_identity(viewer);
-            }),
-            sheet,
+            })),
+            table,
             config: viewer.trivial_config(),
             viewer,
         }
@@ -63,7 +65,7 @@ impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
         let painter = ui.painter().clone();
         let visual = &style.visuals;
         let viewer = &mut *self.viewer;
-        let s = &mut *self.state;
+        let s = self.state.as_mut().unwrap();
         let mut resp_total = None::<Response>;
         let mut resp_ret = None::<Response>;
         let mut commands = Vec::<Command<R>>::new();
@@ -77,7 +79,7 @@ impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
         let mut builder = egui_extras::TableBuilder::new(ui).column(Column::auto());
 
         for &column in s.vis_cols.iter() {
-            builder = builder.column(viewer.column_config(column.0));
+            builder = builder.column(viewer.column_render_config(column.0));
         }
 
         if s.is_editing() {
@@ -114,7 +116,7 @@ impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
                                     if !asc.0 { Color32::RED } else { green },
                                     RichText::new(format!(
                                         "{}{}",
-                                        if asc.0 { "↑" } else { "↓" },
+                                        if asc.0 { "↗" } else { "↘" },
                                         pos + 1,
                                     ))
                                     .monospace(),
@@ -138,6 +140,16 @@ impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
                             "_EGUI_DATATABLE__COLUMN_MOVE__".into(),
                             viewer.column_name(col.0),
                         );
+                    }
+
+                    if resp.hovered() && viewer.is_sortable_column(col.0) {
+                        if let Some(p) = &painter {
+                            p.rect_filled(
+                                resp.rect,
+                                egui::Rounding::ZERO,
+                                visual.selection.bg_fill.gamma_multiply(0.2),
+                            );
+                        }
                     }
 
                     if viewer.is_sortable_column(col.0) && resp.clicked_by(PointerButton::Primary) {
@@ -166,7 +178,7 @@ impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
                     }
 
                     if let Some(payload) = resp.dnd_release_payload::<VisColumnPos>() {
-                        commands.push(Command::ReorderColumn {
+                        commands.push(Command::CcReorderColumn {
                             from: *payload,
                             to: vis_col
                                 .0
@@ -177,7 +189,7 @@ impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
 
                     resp.context_menu(|ui| {
                         if ui.button("Hide").clicked() {
-                            commands.push(Command::HideColumn(col));
+                            commands.push(Command::CcHideColumn(col));
                             ui.close_menu();
                         }
 
@@ -194,7 +206,7 @@ impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
                                 if !s.vis_cols.contains(&col)
                                     && ui.button(viewer.column_name(col.0)).clicked()
                                 {
-                                    commands.push(Command::ShowColumn {
+                                    commands.push(Command::CcShowColumn {
                                         what: col,
                                         at: vis_col,
                                     });
@@ -231,8 +243,8 @@ impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
         mut resp_total: Option<Response>,
     ) -> Response {
         let viewer = &mut *self.viewer;
-        let s = &mut *self.state;
-        let sheet = &mut *self.sheet;
+        let s = self.state.as_mut().unwrap();
+        let table = &mut *self.table;
         let visual = &style.visuals;
         let visible_cols = s.vis_cols.clone();
         let no_rounding = egui::Rounding::ZERO;
@@ -248,6 +260,31 @@ impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
                 break 'detect_hotkey;
             }
 
+            if !s.is_editing() {
+                ctx.input_mut(|i| {
+                    i.events.retain(|x| {
+                        match x {
+                            Event::Copy => actions.push(UiAction::CopySelection),
+                            Event::Cut => actions.push(UiAction::CutSelection),
+
+                            // TODO: Later try to parse clipboard contents and detect if
+                            // it's compatible with cells being pasted.
+                            Event::Paste(_) => {
+                                if i.modifiers.shift {
+                                    actions.push(UiAction::PasteInsert)
+                                } else {
+                                    actions.push(UiAction::PasteInPlace)
+                                }
+                            }
+
+                            _ => return true,
+                        }
+
+                        false
+                    })
+                });
+            }
+
             let context = &s.ui_action_context();
             actions.extend(
                 repeat_with(|| ctx.input_mut(|i| viewer.detect_hotkey(i, context)))
@@ -257,16 +294,16 @@ impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
 
         // Validate ui state. Defer this as late as possible; since it may not be
         // called if the table area is out of the visible space.
-        s.validate_cc(&mut sheet.rows, viewer);
+        s.validate_cc(&mut table.rows, viewer);
 
         // Checkout `cc_rows` to satisfy borrow checker. We need to access to
         // state mutably within row rendering; therefore, we can't simply borrow
         // `cc_rows` during the whole logic!
-        let mut cc_rows = take(&mut s.cc_rows);
+        let cc_row_heights = take(&mut s.cc_row_heights);
 
         let mut row_height_updates = Vec::new();
-        let vis_row_digits = cc_rows.len().max(1).ilog10();
-        let row_id_digits = sheet.len().max(1).ilog10();
+        let vis_row_digits = s.cc_rows.len().max(1).ilog10();
+        let row_id_digits = table.len().max(1).ilog10();
 
         let body_max_rect = body.max_rect();
         let body_widths = body.widths()[1..body.widths().len().max(1)].to_owned();
@@ -274,21 +311,43 @@ impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
         let pointer_interact_pos = ctx.input(|i| i.pointer.latest_pos().unwrap_or_default());
         let pointer_primary_down = ctx.input(|i| i.pointer.button_down(PointerButton::Primary));
 
+        /* ----------------------------- Primary Rendering Function ----------------------------- */
+        // - Extracted as a closure to differentiate behavior based on row height
+        //   configuration. (heterogeneous or homogeneous row heights)
+
         let render_fn = |mut row: egui_extras::TableRow| {
             let vis_row = VisRowPos(row.index());
-            let (row_id, prev_row_height) = cc_rows[vis_row.0];
+            let row_id = s.cc_rows[vis_row.0];
+            let prev_row_height = cc_row_heights[vis_row.0];
 
             let mut row_elem_start = Default::default();
 
             // Check if current row is edition target
             let edit_state = s.row_is_fresh_edit(row_id);
-            let is_interactive_row = s.is_interactive_row(vis_row);
+            let interactive_row = s.is_interactive_row(vis_row);
+
+            let check_mouse_dragging_selection = {
+                let s_cci_has_focus = s.cci_has_focus;
+                let s_cci_has_selection = s.has_cci_selection();
+
+                move |resp: &egui::Response| {
+                    let cci_hovered: bool = s_cci_has_focus
+                        && s_cci_has_selection
+                        && resp.rect.contains(pointer_interact_pos);
+                    let sel_drag = cci_hovered && pointer_primary_down;
+                    let sel_click = !s_cci_has_selection && resp.hovered() && pointer_primary_down;
+
+                    edit_state.is_none() && (sel_drag || sel_click)
+                }
+            };
+
+            /* -------------------------------- Header Rendering -------------------------------- */
 
             // Mark row background filled if being edited.
             row.set_selected(edit_state.is_some());
 
             // Render row header button
-            let (_, _) = row.col(|ui| {
+            let (_, head_resp) = row.col(|ui| {
                 // Calculate the position where values start.
                 row_elem_start = ui.max_rect().right_top();
 
@@ -311,8 +370,14 @@ impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
                 });
             });
 
+            if check_mouse_dragging_selection(&head_resp) {
+                s.cci_sel_update_row(vis_row);
+            }
+
+            /* -------------------------------- Columns Rendering ------------------------------- */
+
             // Overridable maximum height
-            let mut maximum_height = 0.;
+            let mut new_maximum_height = 0.;
 
             // Render cell contents regardless of the edition state.
             for (vis_col, col) in visible_cols.iter().enumerate() {
@@ -321,7 +386,8 @@ impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
                 let selected = s.is_selected(vis_row, vis_col);
                 let cci_selected = s.is_selected_cci(vis_row, vis_col);
                 let is_editing = edit_state.is_some();
-                let is_interactive_cell = is_interactive_row.is_some_and(|x| x == vis_col);
+                let is_interactive_cell = interactive_row.is_some_and(|x| x == vis_col);
+                let mut response_consumed = s.is_editing();
 
                 // Mark background filled if selected.
                 row.set_selected(cci_selected);
@@ -335,7 +401,7 @@ impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
                             .rect_filled(ui_max_rect, no_rounding, visual.extreme_bg_color);
                     }
 
-                    viewer.cell_view(ui, &sheet.rows[row_id.0], col.0);
+                    viewer.cell_view(ui, &table.rows[row_id.0], col.0);
 
                     if selected {
                         ui.painter().rect_stroke(
@@ -347,10 +413,10 @@ impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
                             },
                         );
                     }
-                    if is_interactive_row.is_some() && !is_editing {
+                    if interactive_row.is_some() && !is_editing {
                         let st = Stroke {
                             width: 1.,
-                            color: visual.warn_fg_color,
+                            color: visual.warn_fg_color.gamma_multiply(0.5),
                         };
 
                         let xr = ui_max_rect.x_range();
@@ -359,42 +425,130 @@ impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
                         ui.painter().hline(xr, yr.max, st);
 
                         if is_interactive_cell {
-                            ui.painter().rect_stroke(ui_max_rect, no_rounding, st);
+                            ui.painter().rect_stroke(
+                                ui_max_rect,
+                                no_rounding,
+                                Stroke {
+                                    width: 2.,
+                                    color: visual.warn_fg_color,
+                                },
+                            );
                         }
                     }
                 });
 
-                maximum_height = rect.height().max(maximum_height);
+                new_maximum_height = rect.height().max(new_maximum_height);
 
-                // TODO: Create actions from response.
-                // - Highlight on click
-                // - Ctrl + Click, Shift + Click, Ctrl + A, Drag.
-
-                let cci_hovered: bool = s.cci_has_focus
-                    && s.has_cci_selection()
-                    && resp.rect.contains(pointer_interact_pos);
-                let sel_drag = cci_hovered && pointer_primary_down;
-                let sel_click = !s.has_cci_selection() && resp.hovered() && pointer_primary_down;
-
-                if !is_editing && (sel_drag || sel_click) {
+                // -- Mouse Actions --
+                if check_mouse_dragging_selection(&resp) {
                     // Expand cci selection
+                    response_consumed = true;
                     s.cci_sel_update(linear_index);
                 }
 
-                if resp.clicked_by(PointerButton::Primary) {
-                    commands.push(Command::EditStart(
+                if resp.clicked_by(PointerButton::Primary) && is_interactive_cell {
+                    response_consumed = true;
+                    commands.push(Command::CcEditStart(
                         row_id,
                         vis_col,
-                        sheet.rows[row_id.0].clone().into(),
+                        viewer.row_clone(&table.rows[row_id.0]).into(),
                     ));
                     edit_started = true;
                 }
 
-                // TODO: Context menu for this cell
-                // - Insert before/after
-                // - Remove row
-                // - Copy line/paste cell
+                (resp.clone() | head_resp.clone()).context_menu(|ui| {
+                    response_consumed = true;
+
+                    if !selected {
+                        commands.push(Command::CcSetSelection(vec![VisSelection(
+                            linear_index,
+                            linear_index,
+                        )]));
+                    } else if !is_interactive_cell {
+                        s.set_interactive_cell(vis_row, vis_col);
+                    }
+
+                    let sel_multi_row = s.cursor_as_selection().is_some_and(|sel| {
+                        let mut min = usize::MAX;
+                        let mut max = usize::MIN;
+
+                        for sel in sel {
+                            min = min.min(sel.0 .0);
+                            max = max.max(sel.1 .0);
+                        }
+
+                        let (r_min, _) = VisLinearIdx(min).row_col(s.vis_cols.len());
+                        let (r_max, _) = VisLinearIdx(max).row_col(s.vis_cols.len());
+
+                        r_min != r_max
+                    });
+
+                    let cursor_x = ui.cursor().min.x;
+                    let clip = s.has_clipboard_contents();
+                    let b_undo = s.has_undo();
+                    let b_redo = s.has_redo();
+                    let mut n_sep_menu = 0;
+                    let mut draw_sep = false;
+
+                    [
+                        Some((selected, "🖻", "Selection: Copy", UiAction::CopySelection)),
+                        Some((selected, "🖻", "Selection: Cut", UiAction::CutSelection)),
+                        Some((
+                            sel_multi_row,
+                            "🗐",
+                            "Selection: Duplicate",
+                            UiAction::SelectionDuplicateValues,
+                        )),
+                        None,
+                        Some((clip, "➿", "Paste: Replace", UiAction::PasteInPlace)),
+                        Some((clip, "🛠", "Paste: Insert", UiAction::PasteInsert)),
+                        None,
+                        Some((true, "🗐", "Duplicate Row", UiAction::DuplicateRow)),
+                        Some((true, "🗙", "Delete Row", UiAction::DeleteRow)),
+                        None,
+                        Some((b_undo, "⎗", "Undo", UiAction::Undo)),
+                        Some((b_redo, "⎘", "Redo", UiAction::Redo)),
+                    ]
+                    .map(|opt| {
+                        if let Some((icon, label, action)) =
+                            opt.filter(|x| x.0).map(|x| (x.1, x.2, x.3))
+                        {
+                            if draw_sep {
+                                draw_sep = false;
+                                ui.separator();
+                            }
+
+                            ui.horizontal(|ui| {
+                                ui.monospace(icon);
+                                ui.add_space(cursor_x + 20. - ui.cursor().min.x);
+
+                                let r = ui.centered_and_justified(|ui| ui.button(label)).inner;
+
+                                if r.clicked() {
+                                    actions.push(action);
+                                    ui.close_menu();
+                                }
+                            });
+
+                            n_sep_menu += 1;
+                        } else if n_sep_menu > 0 {
+                            n_sep_menu = 0;
+                            draw_sep = true;
+                        }
+                    });
+                });
+
+                if !response_consumed && resp.contains_pointer() {
+                    if let Some(new_value) =
+                        viewer.cell_view_dnd_response(&table.rows[row_id.0], col.0, &resp)
+                    {
+                        commands.push(Command::SetCell(new_value, row_id, *col));
+                    }
+                }
             }
+
+            /* -------------------------------- Editor Rendering -------------------------------- */
+            // - TODO: Change to cell-based editor.
 
             if let Some(focus_column) = edit_state {
                 // Column ui rectangles.
@@ -439,6 +593,7 @@ impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
                         let mut ui_columns = column_rects
                             .iter()
                             .cloned()
+                            .take(visible_cols.len())
                             .enumerate()
                             .map(|(col, rect)| {
                                 ui.child_ui_with_id_source(
@@ -457,7 +612,7 @@ impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
                         for (vis_col, ui) in ui_columns.iter_mut().enumerate() {
                             let column = visible_cols[vis_col].0;
                             let action: EditorAction = viewer
-                                .cell_edit(
+                                .cell_editor(
                                     ui,
                                     s.unwrap_editing_row_data(),
                                     column,
@@ -492,7 +647,7 @@ impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
                             );
                         }
 
-                        maximum_height = ui_min_rect.height().max(maximum_height);
+                        new_maximum_height = ui_min_rect.height().max(new_maximum_height);
                     });
 
                 if let Some(response) = response {
@@ -509,26 +664,28 @@ impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
             }
 
             // Update row height cache if necessary.
-            if self.config.table_row_height.is_none() && prev_row_height != maximum_height {
-                row_height_updates.push((vis_row, maximum_height));
+            if self.config.table_row_height.is_none() && prev_row_height != new_maximum_height {
+                row_height_updates.push((vis_row, new_maximum_height));
             }
-        };
+        }; // ~ render_fn
 
+        // Actual rendering
         if let Some(height) = self.config.table_row_height {
-            body.rows(height, cc_rows.len(), render_fn);
+            body.rows(height, cc_row_heights.len(), render_fn);
         } else {
-            body.heterogeneous_rows(cc_rows.iter().map(|(_, a)| *a), render_fn);
+            body.heterogeneous_rows(cc_row_heights.iter().cloned(), render_fn);
         }
+
+        /* ----------------------------------- Event Handling ----------------------------------- */
 
         if ctx.input(|i| i.pointer.button_released(PointerButton::Primary)) {
-            if let Some(sel) = s.cci_sel_take().filter(|_| !edit_started) {
-                // TODO: By modifier key, selection may appended to the current selection.
-                // - Shift: Expand last selection
-                // - Ctrl: Append to selections
-                commands.push(Command::CacheSetSelection(vec![sel]));
+            let mods = ctx.input(|i| i.modifiers);
+            if let Some(sel) = s.cci_take_selection(mods).filter(|_| !edit_started) {
+                commands.push(Command::CcSetSelection(sel));
             }
         }
 
+        // Control overall focus status.
         if let Some(resp) = resp_total.clone() {
             if resp.clicked() | resp.dragged() {
                 s.cci_has_focus = true;
@@ -538,28 +695,26 @@ impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
         }
 
         // Check in borrowed `cc_rows` back to state.
-        s.cc_rows = {
+        s.cc_row_heights = cc_row_heights.tap_mut(|values| {
             if !row_height_updates.is_empty() {
                 ctx.request_repaint();
             }
 
             for (row_index, row_height) in row_height_updates {
-                cc_rows[row_index.0].1 = row_height;
+                values[row_index.0] = row_height;
             }
-
-            cc_rows
-        };
+        });
 
         // Handle queued actions
         commands.extend(
             actions
                 .into_iter()
-                .flat_map(|action| s.try_apply_ui_action(sheet, viewer, action)),
+                .flat_map(|action| s.try_apply_ui_action(table, viewer, action)),
         );
 
         // Handle queued commands
         for cmd in commands {
-            if matches!(cmd, Command::CommitEdit) {
+            if matches!(cmd, Command::CcCommitEdit) {
                 // If any commit action is detected, release any remaining focus.
                 ctx.memory_mut(|x| {
                     if let Some(fc) = x.focus() {
@@ -568,7 +723,7 @@ impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
                 });
             }
 
-            s.push_new_command(sheet, cmd, self.config.max_undo_history);
+            s.push_new_command(table, viewer, cmd, self.config.max_undo_history);
         }
 
         // Total response
@@ -576,9 +731,8 @@ impl<'a, R: Send + Clone, V: RowViewer<R>> Renderer<'a, R, V> {
     }
 }
 
-impl<'a, R: Send + Clone, V: RowViewer<R>> Drop for Renderer<'a, R, V> {
+impl<'a, R, V: RowViewer<R>> Drop for Renderer<'a, R, V> {
     fn drop(&mut self) {
-        // SAFETY: `state` is guaranteed to be initialized.
-        self.sheet.ui = Some(unsafe { ManuallyDrop::take(&mut self.state) });
+        self.table.ui = self.state.take();
     }
 }
