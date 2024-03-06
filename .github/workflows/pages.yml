@@ -7,7 +7,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  setup:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Caching
@@ -28,11 +28,6 @@ jobs:
         run: rustup target add wasm32-unknown-unknown
       - name: Install trunk
         run: cargo install trunk
-      
-  build:
-    needs: setup
-    runs-on: ubuntu-latest
-    steps:
       - name: Build project
         run: trunk build --release --verbose --public-url ${{ github.event.repository.name }} ./demo/index.html
       - name: Upload artifact
