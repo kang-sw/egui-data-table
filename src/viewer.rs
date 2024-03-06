@@ -29,13 +29,23 @@ pub trait RowViewer<R>: 'static {
         |_, _, _| std::cmp::Ordering::Equal
     }
 
+    /// Get hash value of a filter. This is used to determine if the filter has changed.
+    fn row_filter_hash(&mut self) -> &impl std::hash::Hash {
+        &()
+    }
+
+    /// Create a filter for the row. Filter is applied on every table invalidation.
+    fn create_row_filter(&mut self) -> impl Fn(&R) -> bool {
+        |_| true
+    }
+
     /// Display values of the cell. Any input will be consumed before table renderer;
     /// therefore any widget rendered inside here is read-only.
     ///
     /// To deal with input, use `cell_edit` method. If you need to deal with drag/drop,
     /// see [`RowViewer::on_cell_view_response`] which delivers resulting response of
     /// containing cell.
-    fn draw_cell_view(&mut self, ui: &mut egui::Ui, row: &R, column: usize);
+    fn show_cell_view(&mut self, ui: &mut egui::Ui, row: &R, column: usize);
 
     /// Use this to check if given cell is going to take any dropped payload / use as drag
     /// source.
@@ -50,7 +60,7 @@ pub trait RowViewer<R>: 'static {
     }
 
     /// Edit values of the cell.
-    fn draw_cell_editor(
+    fn show_cell_editor(
         &mut self,
         ui: &mut egui::Ui,
         row: &mut R,
@@ -65,16 +75,6 @@ pub trait RowViewer<R>: 'static {
 
     /// Create duplication of existing row.
     fn clone_row(&mut self, row: &R) -> R;
-
-    /// Get hash value of a filter. This is used to determine if the filter has changed.
-    fn row_filter_hash(&mut self) -> &impl std::hash::Hash {
-        &()
-    }
-
-    /// Create a filter for the row. Filter is applied on every table invalidation.
-    fn create_row_filter(&mut self) -> impl Fn(&R) -> bool {
-        |_| true
-    }
 
     /// Return hotkeys for the current context.
     fn hotkeys(&mut self, context: &UiActionContext) -> Vec<(egui::KeyboardShortcut, UiAction)> {

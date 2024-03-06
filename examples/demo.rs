@@ -72,7 +72,7 @@ impl RowViewer<Row> for Viewer {
         }
     }
 
-    fn draw_cell_view(&mut self, ui: &mut egui::Ui, row: &Row, column: usize) {
+    fn show_cell_view(&mut self, ui: &mut egui::Ui, row: &Row, column: usize) {
         match column {
             0 => {
                 ui.label(&row.0);
@@ -105,7 +105,7 @@ impl RowViewer<Row> for Viewer {
             .map(|x| Box::new(Row((*x).clone(), 9999, false, Grade::A)))
     }
 
-    fn draw_cell_editor(
+    fn show_cell_editor(
         &mut self,
         ui: &mut egui::Ui,
         row: &mut Row,

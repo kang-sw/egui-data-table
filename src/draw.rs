@@ -411,7 +411,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                             .rect_filled(ui_max_rect, no_rounding, visual.extreme_bg_color);
                     }
 
-                    viewer.draw_cell_view(ui, &table.rows[row_id.0], col.0);
+                    viewer.show_cell_view(ui, &table.rows[row_id.0], col.0);
 
                     if selected {
                         ui.painter().rect_stroke(
@@ -588,7 +588,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     .show(ctx, |ui| {
                         ui.with_layout(Layout::top_down_justified(Align::LEFT), |ui| {
                             if let Some(resp) =
-                                viewer.draw_cell_editor(ui, s.unwrap_editing_row_data(), column.0)
+                                viewer.show_cell_editor(ui, s.unwrap_editing_row_data(), column.0)
                             {
                                 if should_focus {
                                     resp.request_focus()
