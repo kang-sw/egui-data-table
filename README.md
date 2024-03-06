@@ -11,3 +11,15 @@ MSRV is 1.75, with RPITIT
 - [x] Internal clipboard support
 - [ ] System clipboard support
 - [ ] Tutorials documentation
+
+# Usage
+
+In `Cargo.toml`, add `egui-data-table` to your dependencies section
+
+```toml
+[dependencies]
+egui-data-table = "0.1"
+```
+
+
+

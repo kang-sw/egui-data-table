@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Example.Demo",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Build.Demo",
+            "program": "CONFIGURE_PLATFORM_PROGRAM_PATH",
+            "windows": {
+                "program": "${workspaceFolder}/target/debug/examples/demo.exe",
+            }
+            
+        }
+    ],
+    "compounds": []
+}
