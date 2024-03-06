@@ -1,11 +1,14 @@
-use std::{iter::repeat_with, mem::take};
+use std::mem::{replace, take};
 
-use egui::{Align, Color32, Event, Layout, PointerButton, Rect, Response, RichText, Sense, Stroke};
+use egui::{
+    epaint::Shadow, Align, Color32, Event, Layout, PointerButton, Rect, Response, RichText, Sense,
+    Stroke,
+};
 use egui_extras::Column;
 use tap::prelude::{Pipe, Tap};
 
 use crate::{
-    viewer::{EditorAction, MoveDirection, RowViewer, TrivialConfig},
+    viewer::{RowViewer, TrivialConfig},
     DataTable, UiAction,
 };
 
@@ -36,7 +39,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
         Self {
             state: Some(table.ui.take().unwrap_or_default().tap_mut(|x| {
                 if table.rows.is_empty() {
-                    table.rows.push(viewer.row_empty());
+                    table.rows.push(viewer.new_empty_row());
                     x.force_mark_dirty();
                 }
 
@@ -82,7 +85,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
             builder = builder.column(viewer.column_render_config(column.0));
         }
 
-        if s.is_editing() {
+        if replace(&mut s.cci_want_move_scroll, false) {
             let interact_row = s.interactive_cell().0;
             builder = builder.scroll_to_row(interact_row.0, None);
         }
@@ -251,6 +254,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
 
         let mut actions = Vec::<UiAction>::new();
         let mut edit_started = false;
+        let hotkeys = viewer.hotkeys(&s.ui_action_context());
 
         // Preemptively consume all hotkeys.
         'detect_hotkey: {
@@ -285,11 +289,13 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                 });
             }
 
-            let context = &s.ui_action_context();
-            actions.extend(
-                repeat_with(|| ctx.input_mut(|i| viewer.detect_hotkey(i, context)))
-                    .map_while(|x| x),
-            )
+            for (hotkey, action) in &hotkeys {
+                ctx.input_mut(|inp| {
+                    if inp.consume_shortcut(hotkey) {
+                        actions.push(*action);
+                    }
+                })
+            }
         }
 
         // Validate ui state. Defer this as late as possible; since it may not be
@@ -306,16 +312,19 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
         let row_id_digits = table.len().max(1).ilog10();
 
         let body_max_rect = body.max_rect();
-        let body_widths = body.widths()[1..body.widths().len().max(1)].to_owned();
 
         let pointer_interact_pos = ctx.input(|i| i.pointer.latest_pos().unwrap_or_default());
         let pointer_primary_down = ctx.input(|i| i.pointer.button_down(PointerButton::Primary));
+
+        s.cci_page_row_count = 0;
 
         /* ----------------------------- Primary Rendering Function ----------------------------- */
         // - Extracted as a closure to differentiate behavior based on row height
         //   configuration. (heterogeneous or homogeneous row heights)
 
         let render_fn = |mut row: egui_extras::TableRow| {
+            s.cci_page_row_count += 1;
+
             let vis_row = VisRowPos(row.index());
             let row_id = s.cc_rows[vis_row.0];
             let prev_row_height = cc_row_heights[vis_row.0];
@@ -323,7 +332,8 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
             let mut row_elem_start = Default::default();
 
             // Check if current row is edition target
-            let edit_state = s.row_is_fresh_edit(row_id);
+            let edit_state = s.row_editing_cell(row_id);
+            let mut editing_cell_rect = Rect::NOTHING;
             let interactive_row = s.is_interactive_row(vis_row);
 
             let check_mouse_dragging_selection = {
@@ -337,7 +347,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     let sel_drag = cci_hovered && pointer_primary_down;
                     let sel_click = !s_cci_has_selection && resp.hovered() && pointer_primary_down;
 
-                    edit_state.is_none() && (sel_drag || sel_click)
+                    sel_drag || sel_click
                 }
             };
 
@@ -390,18 +400,18 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                 let mut response_consumed = s.is_editing();
 
                 // Mark background filled if selected.
-                row.set_selected(cci_selected);
+                row.set_selected(is_editing || cci_selected);
 
                 let (rect, resp) = row.col(|ui| {
                     let ui_max_rect = ui.max_rect();
-                    ui.set_enabled(false);
+                    // ui.set_enabled(false);
 
                     if !cci_selected && selected {
                         ui.painter()
                             .rect_filled(ui_max_rect, no_rounding, visual.extreme_bg_color);
                     }
 
-                    viewer.cell_view(ui, &table.rows[row_id.0], col.0);
+                    viewer.draw_cell_view(ui, &table.rows[row_id.0], col.0);
 
                     if selected {
                         ui.painter().rect_stroke(
@@ -435,6 +445,10 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                             );
                         }
                     }
+
+                    if edit_state.is_some_and(|(_, vis)| vis == vis_col) {
+                        editing_cell_rect = ui_max_rect;
+                    }
                 });
 
                 new_maximum_height = rect.height().max(new_maximum_height);
@@ -451,13 +465,16 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     commands.push(Command::CcEditStart(
                         row_id,
                         vis_col,
-                        viewer.row_clone(&table.rows[row_id.0]).into(),
+                        viewer.clone_row(&table.rows[row_id.0]).into(),
                     ));
                     edit_started = true;
                 }
 
+                /* --------------------------- Context Menu Rendering --------------------------- */
+
                 (resp.clone() | head_resp.clone()).context_menu(|ui| {
                     response_consumed = true;
+                    ui.set_min_size(egui::vec2(250., 10.));
 
                     if !selected {
                         commands.push(Command::CcSetSelection(vec![VisSelection(
@@ -493,18 +510,19 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     [
                         Some((selected, "🖻", "Selection: Copy", UiAction::CopySelection)),
                         Some((selected, "🖻", "Selection: Cut", UiAction::CutSelection)),
+                        Some((selected, "🗙", "Selection: Clear", UiAction::DeleteSelection)),
                         Some((
                             sel_multi_row,
                             "🗐",
-                            "Selection: Duplicate",
+                            "Selection: Fill",
                             UiAction::SelectionDuplicateValues,
                         )),
                         None,
-                        Some((clip, "➿", "Paste: Replace", UiAction::PasteInPlace)),
-                        Some((clip, "🛠", "Paste: Insert", UiAction::PasteInsert)),
+                        Some((clip, "➿", "Clipboard: Paste", UiAction::PasteInPlace)),
+                        Some((clip, "🛠", "Clipboard: Insert", UiAction::PasteInsert)),
                         None,
-                        Some((true, "🗐", "Duplicate Row", UiAction::DuplicateRow)),
-                        Some((true, "🗙", "Delete Row", UiAction::DeleteRow)),
+                        Some((true, "🗐", "Row: Duplicate", UiAction::DuplicateRow)),
+                        Some((true, "🗙", "Row: Delete", UiAction::DeleteRow)),
                         None,
                         Some((b_undo, "⎗", "Undo", UiAction::Undo)),
                         Some((b_redo, "⎘", "Redo", UiAction::Redo)),
@@ -518,11 +536,17 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                                 ui.separator();
                             }
 
+                            let hotkey = hotkeys
+                                .iter()
+                                .find_map(|(k, a)| (a == &action).then(|| ctx.format_shortcut(k)));
+
                             ui.horizontal(|ui| {
                                 ui.monospace(icon);
                                 ui.add_space(cursor_x + 20. - ui.cursor().min.x);
 
-                                let r = ui.centered_and_justified(|ui| ui.button(label)).inner;
+                                let btn = egui::Button::new(label)
+                                    .shortcut_text(hotkey.unwrap_or_else(|| "🗙".into()));
+                                let r = ui.centered_and_justified(|ui| ui.add(btn)).inner;
 
                                 if r.clicked() {
                                     actions.push(action);
@@ -538,9 +562,10 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     });
                 });
 
+                // Forward DnD event if not any event was consumed by the response.
                 if !response_consumed && resp.contains_pointer() {
                     if let Some(new_value) =
-                        viewer.cell_view_dnd_response(&table.rows[row_id.0], col.0, &resp)
+                        viewer.on_cell_view_response(&table.rows[row_id.0], col.0, &resp)
                     {
                         commands.push(Command::SetCell(new_value, row_id, *col));
                     }
@@ -548,112 +573,33 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
             }
 
             /* -------------------------------- Editor Rendering -------------------------------- */
-            // - TODO: Change to cell-based editor.
+            if let Some((should_focus, vis_column)) = edit_state {
+                let column = s.vis_cols[vis_column.0];
 
-            if let Some(focus_column) = edit_state {
-                // Column ui rectangles.
-                let column_rects;
-
-                // Editing window's rectangle.
-                let edit_window_rect;
-
-                {
-                    // Calculate column rectangles ...
-                    let mut rects = Vec::with_capacity(body_widths.len());
-                    let mut width_acc = style.spacing.item_spacing.x * 0.5;
-
-                    for &width in &body_widths {
-                        let width = width + style.spacing.item_spacing.x;
-                        let rect = Rect::from_min_size(
-                            row_elem_start + egui::vec2(width_acc, 0.),
-                            egui::vec2(width, prev_row_height),
-                        );
-
-                        width_acc += width;
-                        rects.push(rect);
-                    }
-
-                    edit_window_rect = rects
-                        .iter()
-                        .fold(Rect::NOTHING, |acc, x| acc.union(*x))
-                        .pipe(|x| x.translate(egui::vec2(0., style.spacing.item_spacing.y * 0.5)));
-
-                    column_rects = rects;
-                };
-
-                let response = egui::Window::new("")
-                    .id(ui_id.with("__Egui_DataTable_Window__").with(vis_row.0))
-                    .title_bar(false)
-                    .min_size(edit_window_rect.size())
-                    .fixed_pos(edit_window_rect.min)
-                    .auto_sized()
+                egui::Window::new("")
+                    .id(ui_id.with(row_id).with(column))
                     .constrain_to(body_max_rect)
-                    .frame(egui::Frame::none().fill(visual.window_fill))
+                    .fixed_pos(editing_cell_rect.min)
+                    .auto_sized()
+                    .min_size(editing_cell_rect.size())
+                    .max_width(editing_cell_rect.width())
+                    .title_bar(false)
+                    .frame(egui::Frame::none().shadow(Shadow::small_dark()))
                     .show(ctx, |ui| {
-                        let mut ui_columns = column_rects
-                            .iter()
-                            .cloned()
-                            .take(visible_cols.len())
-                            .enumerate()
-                            .map(|(col, rect)| {
-                                ui.child_ui_with_id_source(
-                                    rect.shrink2(style.spacing.item_spacing * 0.5),
-                                    Layout::top_down_justified(Align::LEFT),
-                                    s.vis_cols[col].0,
-                                )
-                                .tap_mut(|x| {
-                                    x.set_clip_rect(
-                                        rect.with_max_y(f32::INFINITY).intersect(body_max_rect),
-                                    )
-                                })
-                            })
-                            .collect::<Vec<_>>();
+                        ui.with_layout(Layout::top_down_justified(Align::LEFT), |ui| {
+                            if let Some(resp) =
+                                viewer.draw_cell_editor(ui, s.unwrap_editing_row_data(), column.0)
+                            {
+                                if should_focus {
+                                    resp.request_focus()
+                                }
 
-                        for (vis_col, ui) in ui_columns.iter_mut().enumerate() {
-                            let column = visible_cols[vis_col].0;
-                            let action: EditorAction = viewer
-                                .cell_editor(
-                                    ui,
-                                    s.unwrap_editing_row_data(),
-                                    column,
-                                    focus_column.map(|x| visible_cols[x.0].0),
-                                )
-                                .into();
-
-                            match action {
-                                EditorAction::Idle => (),
-                                EditorAction::Commit => actions
-                                    .push(UiAction::CommitEditionAndMove(MoveDirection::Down)),
-                                EditorAction::Cancel => actions.push(UiAction::CancelEdition),
+                                new_maximum_height = resp.rect.height().max(new_maximum_height);
+                            } else {
+                                commands.push(Command::CcCommitEdit);
                             }
-                        }
-
-                        let ui_min_rect = ui_columns
-                            .into_iter()
-                            .fold(Rect::NOTHING, |acc, c_ui| acc.union(c_ui.min_rect()));
-
-                        ui.advance_cursor_after_rect(
-                            ui_min_rect.union(edit_window_rect).intersect(body_max_rect),
-                        );
-
-                        for mut rect in column_rects {
-                            rect.min.y = ui_min_rect.min.y;
-                            rect.max.y = ui_min_rect.max.y;
-
-                            ui.painter().rect_stroke(
-                                rect,
-                                egui::Rounding::default(),
-                                visual.window_stroke,
-                            );
-                        }
-
-                        new_maximum_height = ui_min_rect.height().max(new_maximum_height);
+                        });
                     });
-
-                if let Some(response) = response {
-                    let resp_tot = resp_total.as_mut().unwrap();
-                    *resp_tot = resp_tot.union(response.response);
-                }
             }
 
             // Accumulate response

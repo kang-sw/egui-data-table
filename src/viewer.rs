@@ -25,7 +25,7 @@ pub trait RowViewer<R>: 'static {
     }
 
     /// Compare two column contents for sort.
-    fn cell_comparator(&mut self) -> impl Fn(&R, &R, usize) -> std::cmp::Ordering {
+    fn create_cell_comparator(&mut self) -> impl Fn(&R, &R, usize) -> std::cmp::Ordering {
         |_, _, _| std::cmp::Ordering::Equal
     }
 
@@ -33,13 +33,13 @@ pub trait RowViewer<R>: 'static {
     /// therefore any widget rendered inside here is read-only.
     ///
     /// To deal with input, use `cell_edit` method. If you need to deal with drag/drop,
-    /// see [`RowViewer::cell_view_dnd_response`] which delivers resulting response of
+    /// see [`RowViewer::on_cell_view_response`] which delivers resulting response of
     /// containing cell.
-    fn cell_view(&mut self, ui: &mut egui::Ui, row: &R, column: usize);
+    fn draw_cell_view(&mut self, ui: &mut egui::Ui, row: &R, column: usize);
 
     /// Use this to check if given cell is going to take any dropped payload / use as drag
     /// source.
-    fn cell_view_dnd_response(
+    fn on_cell_view_response(
         &mut self,
         row: &R,
         column: usize,
@@ -50,47 +50,35 @@ pub trait RowViewer<R>: 'static {
     }
 
     /// Edit values of the cell.
-    fn cell_editor(
+    fn draw_cell_editor(
         &mut self,
         ui: &mut egui::Ui,
         row: &mut R,
         column: usize,
-        focus_column: Option<usize>,
-    ) -> impl Into<EditorAction>;
+    ) -> Option<egui::Response>;
 
     /// Set the value of a column in a row.
-    fn cell_set_value(&mut self, src: &R, dst: &mut R, column: usize);
+    fn set_cell_value(&mut self, src: &R, dst: &mut R, column: usize);
 
     /// Create a new empty row.
-    fn row_empty(&mut self) -> R;
+    fn new_empty_row(&mut self) -> R;
 
     /// Create duplication of existing row.
-    fn row_clone(&mut self, row: &R) -> R;
+    fn clone_row(&mut self, row: &R) -> R;
 
     /// Get hash value of a filter. This is used to determine if the filter has changed.
-    fn hash_row_filter(&mut self) -> &impl std::hash::Hash {
+    fn row_filter_hash(&mut self) -> &impl std::hash::Hash {
         &()
     }
 
     /// Create a filter for the row. Filter is applied on every table invalidation.
-    fn row_filter(&mut self) -> impl Fn(&R) -> bool {
+    fn create_row_filter(&mut self) -> impl Fn(&R) -> bool {
         |_| true
     }
 
-    /// Clear the value of a column in a row.
-    fn clear_column(&mut self, row: &mut R, column: usize) {
-        let empty_row = self.row_empty();
-        self.cell_set_value(&empty_row, row, column);
-    }
-
-    /// Method should consume all inputs, until there's no more inputs to consume.
-    /// Returning [`Some`] forever may cause the application to hang.
-    fn detect_hotkey(
-        &mut self,
-        input: &mut egui::InputState,
-        context: &UiActionContext,
-    ) -> Option<UiAction> {
-        self::detect_hotkey_excel(input, context)
+    /// Return hotkeys for the current context.
+    fn hotkeys(&mut self, context: &UiActionContext) -> Vec<(egui::KeyboardShortcut, UiAction)> {
+        self::default_hotkeys(context)
     }
 
     /// Get trivial configurations for renderer.
@@ -105,7 +93,6 @@ pub trait RowViewer<R>: 'static {
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct UiActionContext {
-    ///
     pub cursor: UiCursorState,
 }
 
@@ -156,6 +143,11 @@ pub enum UiAction {
     DeleteSelection,
     DeleteRow,
 
+    NavPageDown,
+    NavPageUp,
+    NavTop,
+    NavBottom,
+
     SelectionDuplicateValues,
     SelectAll,
 }
@@ -168,23 +160,14 @@ pub enum MoveDirection {
     Right,
 }
 
-pub fn detect_hotkey_excel(
-    i: &mut egui::InputState,
-    context: &UiActionContext,
-) -> Option<UiAction> {
+pub fn default_hotkeys(context: &UiActionContext) -> Vec<(KeyboardShortcut, UiAction)> {
     let c = context.cursor;
 
-    fn shortcut(
-        i: &mut egui::InputState,
-        actions: &[(Modifiers, Key, UiAction)],
-    ) -> Option<UiAction> {
-        for (m, k, a) in actions {
-            if i.consume_shortcut(&KeyboardShortcut::new(*m, *k)) {
-                return Some(*a);
-            }
-        }
-
-        None
+    fn shortcut(actions: &[(Modifiers, Key, UiAction)]) -> Vec<(egui::KeyboardShortcut, UiAction)> {
+        actions
+            .iter()
+            .map(|(m, k, a)| (egui::KeyboardShortcut::new(*m, *k), *a))
+            .collect()
     }
 
     let none = Modifiers::NONE;
@@ -196,38 +179,40 @@ pub fn detect_hotkey_excel(
     type MD = MoveDirection;
 
     if c.is_editing() {
-        shortcut(
-            i,
-            &[
-                (none, Key::Escape, UiAction::CommitEdition),
-                (ctrl, Key::Escape, UiAction::CancelEdition),
-                (shift, Key::Enter, CommitEditionAndMove(MD::Up)),
-                (ctrl, Key::Enter, CommitEditionAndMove(MD::Down)),
-                (shift, Key::Tab, CommitEditionAndMove(MD::Left)),
-                (none, Key::Tab, CommitEditionAndMove(MD::Right)),
-            ],
-        )
+        shortcut(&[
+            (none, Key::Escape, UiAction::CommitEdition),
+            (ctrl, Key::Escape, UiAction::CancelEdition),
+            (shift, Key::Enter, CommitEditionAndMove(MD::Up)),
+            (ctrl, Key::Enter, CommitEditionAndMove(MD::Down)),
+            (shift, Key::Tab, CommitEditionAndMove(MD::Left)),
+            (none, Key::Tab, CommitEditionAndMove(MD::Right)),
+        ])
     } else {
-        shortcut(
-            i,
-            &[
-                (ctrl, Key::Y, UiAction::Redo),
-                (ctrl, Key::Z, UiAction::Undo),
-                (none, Key::Enter, UiAction::SelectionStartEditing),
-                (none, Key::ArrowUp, UiAction::MoveSelection(MD::Up)),
-                (none, Key::ArrowDown, UiAction::MoveSelection(MD::Down)),
-                (none, Key::ArrowLeft, UiAction::MoveSelection(MD::Left)),
-                (none, Key::ArrowRight, UiAction::MoveSelection(MD::Right)),
-                (shift, Key::V, UiAction::PasteInsert),
-                (alt, Key::V, UiAction::PasteInsert),
-                (ctrl | shift, Key::D, UiAction::DuplicateRow),
-                (ctrl, Key::D, UiAction::SelectionDuplicateValues),
-                (ctrl, Key::A, UiAction::SelectAll),
-                (ctrl, Key::Delete, UiAction::DeleteRow),
-                (none, Key::Delete, UiAction::DeleteSelection),
-                (none, Key::Backspace, UiAction::DeleteSelection),
-            ],
-        )
+        shortcut(&[
+            (ctrl, Key::X, UiAction::CutSelection),
+            (ctrl, Key::C, UiAction::CopySelection),
+            (ctrl | shift, Key::V, UiAction::PasteInsert),
+            (ctrl, Key::V, UiAction::PasteInPlace),
+            (ctrl, Key::Y, UiAction::Redo),
+            (ctrl, Key::Z, UiAction::Undo),
+            (none, Key::Enter, UiAction::SelectionStartEditing),
+            (none, Key::ArrowUp, UiAction::MoveSelection(MD::Up)),
+            (none, Key::ArrowDown, UiAction::MoveSelection(MD::Down)),
+            (none, Key::ArrowLeft, UiAction::MoveSelection(MD::Left)),
+            (none, Key::ArrowRight, UiAction::MoveSelection(MD::Right)),
+            (shift, Key::V, UiAction::PasteInsert),
+            (alt, Key::V, UiAction::PasteInsert),
+            (ctrl | shift, Key::D, UiAction::DuplicateRow),
+            (ctrl, Key::D, UiAction::SelectionDuplicateValues),
+            (ctrl, Key::A, UiAction::SelectAll),
+            (ctrl, Key::Delete, UiAction::DeleteRow),
+            (none, Key::Delete, UiAction::DeleteSelection),
+            (none, Key::Backspace, UiAction::DeleteSelection),
+            (none, Key::PageUp, UiAction::NavPageUp),
+            (none, Key::PageDown, UiAction::NavPageDown),
+            (none, Key::Home, UiAction::NavTop),
+            (none, Key::End, UiAction::NavBottom),
+        ])
     }
 }
 
@@ -247,26 +232,6 @@ impl Default for TrivialConfig {
         Self {
             table_row_height: None,
             max_undo_history: 100,
-        }
-    }
-}
-
-/* ------------------------------------------- Action ------------------------------------------- */
-
-#[derive(Default, Clone, Copy)]
-pub enum EditorAction {
-    #[default]
-    Idle,
-    Commit,
-    Cancel,
-}
-
-impl From<Option<bool>> for EditorAction {
-    fn from(value: Option<bool>) -> Self {
-        match value {
-            Some(true) => Self::Commit,
-            Some(false) => Self::Cancel,
-            None => Self::Idle,
         }
     }
 }

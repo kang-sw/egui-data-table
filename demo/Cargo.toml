@@ -1,18 +1,24 @@
 [package]
-name = "egui-data-table"
+name = "demo"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-[workspace]
-members = ["demo"]
+[[bin]]
+name = "demo"
+path = "../examples/demo.rs"
 
 [dependencies]
 egui = "0.26"
 egui_extras = { version = "0.26", default-features = false }
-tap = "1"
-
-[dev-dependencies]
 eframe = { version = "0.26", features = ["serde", "persistence"] }
+
+egui-data-table = { path = ".." }
+
 fastrand = "2"
 names = { version = "0.14", default-features = false }
+getrandom = { version = "0.2", features = ["js"] }
+
+tap = "1"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = "0.4"

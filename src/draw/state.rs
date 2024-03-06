@@ -198,6 +198,12 @@ pub(crate) struct UiState<R> {
 
     /// We have latest click.
     pub cci_has_focus: bool,
+
+    /// Interface wants to scroll to the row.
+    pub cci_want_move_scroll: bool,
+
+    /// How many rows are rendered at once recently?
+    pub cci_page_row_count: usize,
 }
 
 struct Clipboard<R> {
@@ -235,6 +241,8 @@ impl<R> Default for UiState<R> {
             cc_num_frame_from_last_edit: 0,
             cc_prev_n_columns: 0,
             cc_desired_selection: None,
+            cci_want_move_scroll: false,
+            cci_page_row_count: 0,
         }
     }
 }
@@ -254,7 +262,7 @@ impl<R> UiState<R> {
         let num_columns = vwr.num_columns();
         let vwr_type_id = std::any::TypeId::of::<V>();
         let vwr_hash = AHasher::default().pipe(|mut hsh| {
-            vwr.hash_row_filter().hash(&mut hsh);
+            vwr.row_filter_hash().hash(&mut hsh);
             hsh.finish()
         });
 
@@ -317,7 +325,7 @@ impl<R> UiState<R> {
         // - Maybe we need specialization for `R: Send`?
 
         // We should validate the entire cache.
-        let filter = vwr.row_filter();
+        let filter = vwr.create_row_filter();
         self.cc_rows.clear();
         self.cc_rows.extend(
             rows.iter()
@@ -326,7 +334,7 @@ impl<R> UiState<R> {
                 .map(RowIdx),
         );
 
-        let comparator = vwr.cell_comparator();
+        let comparator = vwr.create_cell_comparator();
         for (sort_col, asc) in self.sort.iter().rev() {
             self.cc_rows.sort_by(|a, b| {
                 comparator(&rows[a.0], &rows[b.0], sort_col.0).tap_mut(|x| {
@@ -413,25 +421,16 @@ impl<R> UiState<R> {
         self.cc_dirty = true;
     }
 
-    /// - `None`: Not editing this row
-    /// - `Some(true)`: Freshly started editing
-    /// - `Some(false)`: Already editing
-    pub fn row_is_fresh_edit(&mut self, row_id: RowIdx) -> Option<Option<VisColumnPos>> {
-        let CursorState::Edit {
-            next_focus,
-            row,
-            last_focus,
-            ..
-        } = &mut self.cc_cursor
-        else {
-            return None;
-        };
-
-        if *row != row_id {
-            return None;
+    pub fn row_editing_cell(&mut self, row_id: RowIdx) -> Option<(bool, VisColumnPos)> {
+        match &mut self.cc_cursor {
+            CursorState::Edit {
+                row,
+                last_focus,
+                next_focus,
+                ..
+            } if *row == row_id => Some((replace(next_focus, false), *last_focus)),
+            _ => None,
         }
-
-        Some(replace(next_focus, false).then_some(*last_focus))
     }
 
     pub fn num_columns(&self) -> usize {
@@ -606,7 +605,7 @@ impl<R> UiState<R> {
             Command::SetRowValue(row_id, _) => {
                 vec![Command::SetRowValue(
                     row_id,
-                    vwr.row_clone(&table.rows[row_id.0]).into(),
+                    vwr.clone_row(&table.rows[row_id.0]).into(),
                 )]
             }
 
@@ -616,7 +615,7 @@ impl<R> UiState<R> {
 
                 keys.iter()
                     .map(|row_id| {
-                        Command::SetRowValue(*row_id, vwr.row_clone(&table.rows[row_id.0]).into())
+                        Command::SetRowValue(*row_id, vwr.clone_row(&table.rows[row_id.0]).into())
                     })
                     .collect()
             }
@@ -643,14 +642,14 @@ impl<R> UiState<R> {
             Command::RemoveRow(ref indices) => {
                 let values = indices
                     .iter()
-                    .map(|x| vwr.row_clone(&table.rows[x.0]))
+                    .map(|x| vwr.clone_row(&table.rows[x.0]))
                     .collect();
                 vec![Command::InsertRows(RowIdx(indices[0].0), values)]
             }
             Command::SetCell(_, row_id, _) => {
                 vec![Command::SetRowValue(
                     row_id,
-                    vwr.row_clone(&table.rows[row_id.0]).into(),
+                    vwr.clone_row(&table.rows[row_id.0]).into(),
                 )]
             }
         };
@@ -696,19 +695,19 @@ impl<R> UiState<R> {
             Command::SetRowValue(row_id, value) => {
                 self.cc_num_frame_from_last_edit = 0;
                 table.dirty_flag = true;
-                table.rows[row_id.0] = vwr.row_clone(value);
+                table.rows[row_id.0] = vwr.clone_row(value);
             }
             Command::SetCell(value, row, col) => {
                 self.cc_num_frame_from_last_edit = 0;
                 table.dirty_flag = true;
-                vwr.cell_set_value(value, &mut table.rows[row.0], col.0);
+                vwr.set_cell_value(value, &mut table.rows[row.0], col.0);
             }
             Command::SetCells { slab, values } => {
                 self.cc_num_frame_from_last_edit = 0;
                 table.dirty_flag = true;
 
                 for (row, col, value_id) in values.iter() {
-                    vwr.cell_set_value(&slab[value_id.0], &mut table.rows[row.0], col.0);
+                    vwr.set_cell_value(&slab[value_id.0], &mut table.rows[row.0], col.0);
                 }
             }
             Command::InsertRows(pos, values) => {
@@ -717,7 +716,7 @@ impl<R> UiState<R> {
 
                 table
                     .rows
-                    .splice(pos.0..pos.0, values.iter().map(|x| vwr.row_clone(x)));
+                    .splice(pos.0..pos.0, values.iter().map(|x| vwr.clone_row(x)));
 
                 self.queue_select_rows((pos.0..pos.0 + values.len()).map(RowIdx));
             }
@@ -856,11 +855,13 @@ impl<R> UiState<R> {
             default()
         }
 
+        self.cci_want_move_scroll = true;
+
         let (ic_r, ic_c) = self.cc_interactive_cell.row_col(self.vis_cols.len());
         match action {
             UiAction::SelectionStartEditing => {
                 let row_id = self.cc_rows[ic_r.0];
-                let row = vwr.row_clone(&table.rows[row_id.0]);
+                let row = vwr.clone_row(&table.rows[row_id.0]);
                 vec![Command::CcEditStart(row_id, ic_c, Box::new(row))]
             }
             UiAction::CancelEdition => vec![Command::CcCancelEdit],
@@ -870,9 +871,9 @@ impl<R> UiState<R> {
                 let (r, c) = pos.row_col(self.vis_cols.len());
                 let row_id = self.cc_rows[r.0];
                 let row_value = if self.is_editing() && ic_r == r {
-                    vwr.row_clone(self.unwrap_editing_row_data())
+                    vwr.clone_row(self.unwrap_editing_row_data())
                 } else {
-                    vwr.row_clone(&table.rows[row_id.0])
+                    vwr.clone_row(&table.rows[row_id.0])
                 };
 
                 vec![
@@ -901,7 +902,7 @@ impl<R> UiState<R> {
 
                 for vis_row in self.collect_selected_rows() {
                     vis_map.insert(vis_row, slab.len());
-                    slab.push(vwr.row_clone(&table.rows[self.cc_rows[vis_row.0].0]));
+                    slab.push(vwr.clone_row(&table.rows[self.cc_rows[vis_row.0].0]));
                 }
 
                 self.clipboard = Some(Clipboard {
@@ -928,7 +929,7 @@ impl<R> UiState<R> {
                 }
             }
             UiAction::SelectionDuplicateValues => {
-                let pivot_row = vwr.row_clone(&table.rows[self.cc_rows[ic_r.0].0]);
+                let pivot_row = vwr.clone_row(&table.rows[self.cc_rows[ic_r.0].0]);
                 let sels = self.collect_selection();
 
                 vec![Command::SetCells {
@@ -955,7 +956,7 @@ impl<R> UiState<R> {
                 self.cc_desired_selection = Some(rows);
 
                 vec![Command::SetCells {
-                    slab: clip.slab.iter().map(|x| vwr.row_clone(x)).collect(),
+                    slab: clip.slab.iter().map(|x| vwr.clone_row(x)).collect(),
                     values: values.into_boxed_slice(),
                 }]
             }
@@ -969,11 +970,11 @@ impl<R> UiState<R> {
                     .pastes
                     .iter()
                     .filter(|&(offset, ..)| replace(&mut last, offset.0) != offset.0)
-                    .map(|(offset, ..)| (*offset, vwr.row_empty()))
+                    .map(|(offset, ..)| (*offset, vwr.new_empty_row()))
                     .collect::<BTreeMap<_, _>>();
 
                 for (offset, column, slab_id) in &*clip.pastes {
-                    vwr.cell_set_value(
+                    vwr.set_cell_value(
                         &clip.slab[slab_id.0],
                         rows.get_mut(offset).unwrap(),
                         column.0,
@@ -981,7 +982,7 @@ impl<R> UiState<R> {
                 }
 
                 let pos = if self.sort.is_empty() {
-                    self.cc_rows[ic_r.0].tap_mut(|x| x.0 += 1)
+                    self.cc_rows[ic_r.0]
                 } else {
                     RowIdx(table.rows.len())
                 };
@@ -994,11 +995,11 @@ impl<R> UiState<R> {
                     .collect_selected_rows()
                     .into_iter()
                     .map(|x| self.cc_rows[x.0])
-                    .map(|r| vwr.row_clone(&table.rows[r.0]))
+                    .map(|r| vwr.clone_row(&table.rows[r.0]))
                     .collect();
 
                 let pos = if self.sort.is_empty() {
-                    self.cc_rows[ic_r.0].tap_mut(|x| x.0 += 1)
+                    self.cc_rows[ic_r.0]
                 } else {
                     RowIdx(table.rows.len())
                 };
@@ -1006,7 +1007,7 @@ impl<R> UiState<R> {
                 vec![Command::InsertRows(pos, rows)]
             }
             UiAction::DeleteSelection => {
-                let default = vwr.row_empty();
+                let default = vwr.new_empty_row();
                 let sels = self.collect_selection();
                 let slab = vec![default].into_boxed_slice();
 
@@ -1036,6 +1037,31 @@ impl<R> UiState<R> {
                     VisLinearIdx(0),
                     VisRowPos(self.cc_rows.len().saturating_sub(1))
                         .linear_index(self.vis_cols.len(), VisColumnPos(self.vis_cols.len() - 1)),
+                )])]
+            }
+
+            action @ (UiAction::NavPageDown
+            | UiAction::NavPageUp
+            | UiAction::NavTop
+            | UiAction::NavBottom) => {
+                let ofst = match action {
+                    UiAction::NavPageDown => self.cci_page_row_count as isize,
+                    UiAction::NavPageUp => -(self.cci_page_row_count as isize),
+                    UiAction::NavTop => isize::MIN,
+                    UiAction::NavBottom => isize::MAX,
+                    _ => unreachable!(),
+                };
+
+                let new_ic_r = (ic_r.0 as isize)
+                    .saturating_add(ofst)
+                    .clamp(0, self.cc_rows.len().saturating_sub(1) as _);
+                self.cc_interactive_cell =
+                    VisLinearIdx(new_ic_r as usize * self.vis_cols.len() + ic_c.0);
+
+                self.validate_interactive_cell(self.vis_cols.len());
+                vec![Command::CcSetSelection(vec![VisSelection(
+                    self.cc_interactive_cell,
+                    self.cc_interactive_cell,
                 )])]
             }
         }

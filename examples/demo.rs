@@ -1,13 +1,17 @@
 use std::iter::repeat_with;
 
-use egui::Sense;
-use egui_data_table::RowViewer;
+use egui::{Response, Sense, Widget};
+use egui_data_table::{
+    viewer::{default_hotkeys, UiActionContext},
+    RowViewer,
+};
 use tap::prelude::Pipe;
 
 /* ----------------------------------------- Data Scheme ---------------------------------------- */
 
 struct Viewer {
     filter: String,
+    hotkeys: Vec<(egui::KeyboardShortcut, egui_data_table::UiAction)>,
 }
 
 #[derive(Debug, Clone)]
@@ -29,14 +33,14 @@ impl RowViewer<Row> for Viewer {
     }
 
     fn column_name(&mut self, column: usize) -> &str {
-        ["Name", "Age", "Is Student", "Grade"][column]
+        ["Name (Click To Sort)", "Age", "Is Student", "Grade"][column]
     }
 
     fn is_sortable_column(&mut self, column: usize) -> bool {
         [true, true, false, true][column]
     }
 
-    fn cell_comparator(&mut self) -> fn(&Row, &Row, usize) -> std::cmp::Ordering {
+    fn create_cell_comparator(&mut self) -> fn(&Row, &Row, usize) -> std::cmp::Ordering {
         fn cmp(row_l: &Row, row_r: &Row, column: usize) -> std::cmp::Ordering {
             match column {
                 0 => row_l.0.cmp(&row_r.0),
@@ -50,15 +54,15 @@ impl RowViewer<Row> for Viewer {
         cmp
     }
 
-    fn row_empty(&mut self) -> Row {
+    fn new_empty_row(&mut self) -> Row {
         Row("".to_string(), 0, false, Grade::F)
     }
 
-    fn row_clone(&mut self, row: &Row) -> Row {
+    fn clone_row(&mut self, row: &Row) -> Row {
         row.clone()
     }
 
-    fn cell_set_value(&mut self, src: &Row, dst: &mut Row, column: usize) {
+    fn set_cell_value(&mut self, src: &Row, dst: &mut Row, column: usize) {
         match column {
             0 => dst.0 = src.0.clone(),
             1 => dst.1 = src.1,
@@ -68,17 +72,7 @@ impl RowViewer<Row> for Viewer {
         }
     }
 
-    fn clear_column(&mut self, row: &mut Row, column: usize) {
-        match column {
-            0 => row.0.clear(),
-            1 => row.1 = 0,
-            2 => row.2 = false,
-            3 => row.3 = Grade::F,
-            _ => unreachable!(),
-        }
-    }
-
-    fn cell_view(&mut self, ui: &mut egui::Ui, row: &Row, column: usize) {
+    fn draw_cell_view(&mut self, ui: &mut egui::Ui, row: &Row, column: usize) {
         match column {
             0 => {
                 ui.label(&row.0);
@@ -101,7 +95,7 @@ impl RowViewer<Row> for Viewer {
         }
     }
 
-    fn cell_view_dnd_response(
+    fn on_cell_view_response(
         &mut self,
         _row: &Row,
         _column: usize,
@@ -111,13 +105,12 @@ impl RowViewer<Row> for Viewer {
             .map(|x| Box::new(Row((*x).clone(), 9999, false, Grade::A)))
     }
 
-    fn cell_editor(
+    fn draw_cell_editor(
         &mut self,
         ui: &mut egui::Ui,
         row: &mut Row,
         column: usize,
-        focus_column: Option<usize>,
-    ) -> Option<bool> {
+    ) -> Option<Response> {
         match column {
             0 => {
                 egui::TextEdit::multiline(&mut row.0)
@@ -140,22 +133,24 @@ impl RowViewer<Row> for Viewer {
             }
             _ => unreachable!(),
         }
-        .pipe(|resp| {
-            if focus_column.is_some_and(|x| x == column) {
-                resp.request_focus()
-            }
-        });
-
-        // Just let the upstream control focuses
-        None
+        .into()
     }
 
-    fn hash_row_filter(&mut self) -> &impl std::hash::Hash {
+    fn row_filter_hash(&mut self) -> &impl std::hash::Hash {
         &self.filter
     }
 
-    fn row_filter(&mut self) -> impl Fn(&Row) -> bool {
+    fn create_row_filter(&mut self) -> impl Fn(&Row) -> bool {
         |r| r.0.contains(&self.filter)
+    }
+
+    fn hotkeys(
+        &mut self,
+        context: &UiActionContext,
+    ) -> Vec<(egui::KeyboardShortcut, egui_data_table::UiAction)> {
+        let hotkeys = default_hotkeys(context);
+        self.hotkeys = hotkeys.clone();
+        hotkeys
     }
 }
 
@@ -191,13 +186,14 @@ impl Default for DemoApp {
             .collect(),
             viewer: Viewer {
                 filter: String::new(),
+                hotkeys: Vec::new(),
             },
         }
     }
 }
 
-impl DemoApp {
-    fn tick(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+impl eframe::App for DemoApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         fn is_send<T: Send>(_: &T) {}
         fn is_sync<T: Sync>(_: &T) {}
 
@@ -218,6 +214,24 @@ impl DemoApp {
             })
         });
 
+        egui::SidePanel::left("Hotkeys")
+            .default_width(500.)
+            .show(ctx, |ui| {
+                ui.vertical_centered_justified(|ui| {
+                    ui.heading("Hotkeys");
+                    ui.separator();
+                    ui.add_space(0.);
+
+                    for (k, a) in &self.viewer.hotkeys {
+                        egui::Button::new(format!("{a:?}"))
+                            .shortcut_text(ctx.format_shortcut(k))
+                            .wrap(false)
+                            .sense(Sense::hover())
+                            .ui(ui);
+                    }
+                });
+            });
+
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.style_mut().debug.debug_on_hover_with_all_modifiers = true;
 
@@ -231,8 +245,10 @@ impl DemoApp {
 
 /* --------------------------------------- App Entrypoint --------------------------------------- */
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
+    use eframe::App;
+
     eframe::run_simple_native(
         "Spreadsheet Demo",
         eframe::NativeOptions {
@@ -244,9 +260,25 @@ fn main() {
         {
             let mut app = DemoApp::default();
             move |ctx, frame| {
-                app.tick(ctx, frame);
+                app.update(ctx, frame);
             }
         },
     )
     .unwrap();
+}
+
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    let web_options = eframe::WebOptions::default();
+
+    wasm_bindgen_futures::spawn_local(async {
+        eframe::WebRunner::new()
+            .start(
+                "egui_data_table_demo",
+                web_options,
+                Box::new(|_| Box::new(DemoApp::default())),
+            )
+            .await
+            .expect("failed to start eframe");
+    });
 }
