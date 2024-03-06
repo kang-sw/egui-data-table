@@ -11,6 +11,7 @@ MSRV is 1.75, with RPITIT
 - [x] Internal clipboard support
 - [ ] System clipboard support
 - [ ] Tutorials documentation
+- [ ] Tidy light mode visuals
 
 # Usage
 

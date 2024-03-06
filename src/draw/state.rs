@@ -8,6 +8,7 @@ use egui::{
     ahash::{AHasher, HashMap, HashMapExt},
     Modifiers,
 };
+use itertools::Itertools;
 use tap::prelude::{Pipe, Tap};
 
 use crate::{
@@ -186,7 +187,7 @@ pub(crate) struct UiState<R> {
     cc_interactive_cell: VisLinearIdx,
 
     /// Desired selection of next validation
-    cc_desired_selection: Option<Vec<RowIdx>>,
+    cc_desired_selection: Option<Vec<(RowIdx, Vec<ColumnIdx>)>>,
 
     /*
 
@@ -406,12 +407,24 @@ impl<R> UiState<R> {
         sel.clear();
         let ncol = self.vis_cols.len();
 
-        for row_id in next_sel {
+        for (row_id, columns) in next_sel {
             let vis_row = self.cc_row_id_to_vis[&row_id];
-            let p_left = vis_row.linear_index(ncol, VisColumnPos(0));
-            let p_right = vis_row.linear_index(ncol, VisColumnPos(ncol - 1));
 
-            sel.push(VisSelection(p_left, p_right));
+            if columns.is_empty() {
+                let p_left = vis_row.linear_index(ncol, VisColumnPos(0));
+                let p_right = vis_row.linear_index(ncol, VisColumnPos(ncol - 1));
+
+                sel.push(VisSelection(p_left, p_right));
+            } else {
+                for col in columns {
+                    let Some(vis_c) = self.vis_cols.iter().position(|x| *x == col) else {
+                        continue;
+                    };
+
+                    let p = vis_row.linear_index(ncol, VisColumnPos(vis_c));
+                    sel.push(VisSelection(p, p));
+                }
+            }
         }
 
         true
@@ -744,7 +757,7 @@ impl<R> UiState<R> {
     }
 
     fn queue_select_rows(&mut self, rows: impl IntoIterator<Item = RowIdx>) {
-        self.cc_desired_selection = Some(rows.into_iter().collect());
+        self.cc_desired_selection = Some(rows.into_iter().map(|r| (r, default())).collect());
     }
 
     fn validate_interactive_cell(&mut self, new_num_column: usize) {
@@ -952,8 +965,12 @@ impl<R> UiState<R> {
                             .then(|| (self.cc_rows[vis_r.0], *col, *slab_id))
                     }));
 
-                let rows = Vec::from_iter(values.iter().map(|(r, ..)| *r)).tap_mut(|x| x.dedup());
-                self.cc_desired_selection = Some(rows);
+                let desired = self.cc_desired_selection.get_or_insert(default());
+                desired.clear();
+
+                for (row, group) in &values.iter().group_by(|(row, ..)| *row) {
+                    desired.push((row, group.map(|(_, c, ..)| *c).collect()))
+                }
 
                 vec![Command::SetCells {
                     slab: clip.slab.iter().map(|x| vwr.clone_row(x)).collect(),

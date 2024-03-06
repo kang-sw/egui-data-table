@@ -10,6 +10,30 @@
 </head>
 
 <body>
+    <script>
+        // @see https://stackoverflow.com/questions/24764626/any-way-to-prevent-disable-ctrl-key-shortcuts-in-the-browser
+        
+        //Prevent Ctrl+S (and Ctrl+W for old browsers and Edge)
+        document.onkeydown = function (e) {
+            e = e || window.event;//Get event
+
+            if (!e.ctrlKey) return;
+
+            var code = e.which || e.keyCode;//Get key code
+
+            switch (code) {
+                case 83: //Block Ctrl+S
+                    
+                // Block Ctrl+D
+                case 68:
+                        e.preventDefault();
+                        e.stopPropagation();
+                    break;
+                
+            }
+        };
+    </script>
+    
     <canvas id="egui_data_table_demo"></canvas>
 </body>
 
