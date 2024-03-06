@@ -1,9 +1,6 @@
 name: Build and Deploy Demo Web App
 
 on:
-  push:
-    branches:
-      - master
   workflow_dispatch:
 
 env:

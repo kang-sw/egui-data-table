@@ -233,8 +233,6 @@ impl eframe::App for DemoApp {
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.style_mut().debug.debug_on_hover_with_all_modifiers = true;
-
             ui.add(egui_data_table::Renderer::new(
                 &mut self.table,
                 &mut self.viewer,
