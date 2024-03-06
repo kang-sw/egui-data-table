@@ -3,10 +3,11 @@ name: Build and Deploy Demo Web App
 on:
   push:
     branches:
-      - main
+      - master
     paths: 
-      - demo/**
-      - src/**
+      - 'demo/**'
+      - 'examples/**'
+      - 'src/**'
 
 env:
   CARGO_TERM_COLOR: always
