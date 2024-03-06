@@ -209,7 +209,7 @@ impl eframe::App for DemoApp {
                 ui.label("Name Filter");
                 ui.text_edit_singleline(&mut self.viewer.filter);
 
-                ui.add(egui::Label::new("Drag Me!").sense(Sense::drag()))
+                ui.add(egui::Label::new("Drag me and drop on any cell").sense(Sense::drag()))
                     .dnd_set_drag_payload(String::from("Hallo~"));
             })
         });
