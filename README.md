@@ -7,7 +7,7 @@ MSRV is 1.75, with RPITIT
 - [x] Undo/Redo for every editions
 - [x] Show/Hide/Reorder columns
 - [x] Row duplication / removal
-- [ ] Keyboard navigation
-- [ ] Internal clipboard support
+- [x] Keyboard navigation
+- [x] Internal clipboard support
 - [ ] System clipboard support
 - [ ] Tutorials documentation
