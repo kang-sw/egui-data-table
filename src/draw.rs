@@ -1,9 +1,6 @@
 use std::mem::{replace, take};
 
-use egui::{
-    epaint::Shadow, Align, Color32, Event, Layout, PointerButton, Rect, Response, RichText, Sense,
-    Stroke,
-};
+use egui::{Align, Color32, Event, Layout, PointerButton, Rect, Response, RichText, Sense, Stroke};
 use egui_extras::Column;
 use tap::prelude::{Pipe, Tap};
 
@@ -406,11 +403,26 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     let ui_max_rect = ui.max_rect();
                     // ui.set_enabled(false);
 
-                    if !cci_selected && selected {
+                    if is_interactive_cell {
+                        ui.painter().rect_filled(
+                            ui_max_rect.expand(3.),
+                            no_rounding,
+                            visual.warn_fg_color.gamma_multiply(0.2),
+                        );
+                    } else if !cci_selected && selected {
                         ui.painter()
                             .rect_filled(ui_max_rect, no_rounding, visual.extreme_bg_color);
                     }
 
+                    // Actual widget rendering happens within this line.
+
+                    ui.set_enabled(false);
+                    ui.style_mut()
+                        .visuals
+                        .widgets
+                        .noninteractive
+                        .fg_stroke
+                        .color = visual.strong_text_color();
                     viewer.show_cell_view(ui, &table.rows[row_id.0], col.0);
 
                     if selected {
@@ -433,17 +445,6 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                         let yr = ui_max_rect.y_range();
                         ui.painter().hline(xr, yr.min, st);
                         ui.painter().hline(xr, yr.max, st);
-
-                        if is_interactive_cell {
-                            ui.painter().rect_stroke(
-                                ui_max_rect,
-                                no_rounding,
-                                Stroke {
-                                    width: 2.,
-                                    color: visual.warn_fg_color,
-                                },
-                            );
-                        }
                     }
 
                     if edit_state.is_some_and(|(_, vis)| vis == vis_col) {
@@ -584,7 +585,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     .min_size(editing_cell_rect.size())
                     .max_width(editing_cell_rect.width())
                     .title_bar(false)
-                    .frame(egui::Frame::none().shadow(Shadow::small_dark()))
+                    .frame(egui::Frame::none().rounding(egui::Rounding::same(3.)))
                     .show(ctx, |ui| {
                         ui.with_layout(Layout::top_down_justified(Align::LEFT), |ui| {
                             if let Some(resp) =
