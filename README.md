@@ -1,3 +1,6 @@
+[![Latest version](https://img.shields.io/crates/v/egui-data-table.svg)](https://crates.io/crates/egui-data-table)
+[![Documentation](https://docs.rs/egui-data-table/badge.svg)](https://docs.rs/egui-data-table)
+
 # Data table UI implementation for egui
 
 MSRV is 1.75, with RPITIT

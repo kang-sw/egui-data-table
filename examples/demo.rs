@@ -190,6 +190,18 @@ impl eframe::App for DemoApp {
 
         egui::TopBottomPanel::top("MenuBar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
+                ui.hyperlink_to(
+                    " kang-sw/egui-data-table",
+                    "https://github.com/kang-sw/egui-data-table",
+                );
+
+                ui.hyperlink_to(
+                    "(source)",
+                    "https://github.com/kang-sw/egui-data-table/blob/master/examples/demo.rs",
+                );
+
+                ui.separator();
+
                 egui::widgets::global_dark_light_mode_buttons(ui);
 
                 ui.separator();
