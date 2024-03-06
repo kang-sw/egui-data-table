@@ -1,5 +1,8 @@
+use std::borrow::Cow;
+
 use egui::{Key, KeyboardShortcut, Modifiers};
 pub use egui_extras::Column as TableColumnConfig;
+use tap::prelude::Pipe;
 
 /// The primary trait for the spreadsheet viewer.
 // TODO: When lifetime for `'static` is stabilized; remove the `static` bound.
@@ -10,7 +13,12 @@ pub trait RowViewer<R>: 'static {
     fn num_columns(&mut self) -> usize;
 
     /// Name of the column. This can be dynamically changed.
-    fn column_name(&mut self, column: usize) -> &str;
+    fn column_name(&mut self, column: usize) -> Cow<'static, str> {
+        Cow::Borrowed(
+            &" 0 1 2 3 4 5 6 7 8 91011121314151617181920212223242526272829303132"
+                [(column % 10 * 2).pipe(|x| x..x + 2)],
+        )
+    }
 
     /// Returns the rendering configuration for the column.
     fn column_render_config(&mut self, column: usize) -> TableColumnConfig {
@@ -74,7 +82,15 @@ pub trait RowViewer<R>: 'static {
     fn new_empty_row(&mut self) -> R;
 
     /// Create duplication of existing row.
-    fn clone_row(&mut self, row: &R) -> R;
+    ///
+    /// You may want to override this method for more efficient duplication.
+    fn clone_row(&mut self, row: &R) -> R {
+        let mut dst = self.new_empty_row();
+        for i in 0..self.num_columns() {
+            self.set_cell_value(row, &mut dst, i);
+        }
+        dst
+    }
 
     /// Return hotkeys for the current context.
     fn hotkeys(&mut self, context: &UiActionContext) -> Vec<(egui::KeyboardShortcut, UiAction)> {

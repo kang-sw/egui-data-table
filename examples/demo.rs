@@ -1,11 +1,10 @@
-use std::iter::repeat_with;
+use std::{borrow::Cow, iter::repeat_with};
 
 use egui::{Response, Sense, Widget};
 use egui_data_table::{
     viewer::{default_hotkeys, UiActionContext},
     RowViewer,
 };
-use tap::prelude::Pipe;
 
 /* ----------------------------------------- Data Scheme ---------------------------------------- */
 
@@ -32,8 +31,8 @@ impl RowViewer<Row> for Viewer {
         4
     }
 
-    fn column_name(&mut self, column: usize) -> &str {
-        ["Name (Click To Sort)", "Age", "Is Student", "Grade"][column]
+    fn column_name(&mut self, column: usize) -> Cow<'static, str> {
+        ["Name (Click To Sort)", "Age", "Is Student", "Grade"][column].into()
     }
 
     fn is_sortable_column(&mut self, column: usize) -> bool {
@@ -58,10 +57,6 @@ impl RowViewer<Row> for Viewer {
         Row("".to_string(), 0, false, Grade::F)
     }
 
-    fn clone_row(&mut self, row: &Row) -> Row {
-        row.clone()
-    }
-
     fn set_cell_value(&mut self, src: &Row, dst: &mut Row, column: usize) {
         match column {
             0 => dst.0 = src.0.clone(),
@@ -73,26 +68,19 @@ impl RowViewer<Row> for Viewer {
     }
 
     fn show_cell_view(&mut self, ui: &mut egui::Ui, row: &Row, column: usize) {
-        match column {
-            0 => {
-                ui.label(&row.0);
-            }
-            1 => {
-                ui.label(&row.1.to_string());
-            }
-            2 => {
-                row.2.pipe(|mut x| ui.checkbox(&mut x, ""));
-            }
-            3 => {
-                ui.label(match row.3 {
-                    Grade::A => "A",
-                    Grade::B => "B",
-                    Grade::C => "C",
-                    Grade::F => "F",
-                });
-            }
+        let _ = match column {
+            0 => ui.label(&row.0),
+            1 => ui.label(&row.1.to_string()),
+            2 => ui.checkbox(&mut { row.2 }, ""),
+            3 => ui.label(match row.3 {
+                Grade::A => "A",
+                Grade::B => "B",
+                Grade::C => "C",
+                Grade::F => "F",
+            }),
+
             _ => unreachable!(),
-        }
+        };
     }
 
     fn on_cell_view_response(

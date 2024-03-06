@@ -6,6 +6,9 @@ pub mod viewer;
 pub use draw::Renderer;
 pub use viewer::{RowViewer, UiAction};
 
+/// You may want to sync egui version with this crate.
+pub extern crate egui;
+
 /* ---------------------------------------------------------------------------------------------- */
 /*                                           CORE CLASS                                           */
 /* ---------------------------------------------------------------------------------------------- */
