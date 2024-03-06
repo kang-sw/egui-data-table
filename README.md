@@ -1,7 +1,13 @@
-# Spreadsheet UI implementation for egui
+# Data table UI implementation for egui
 
-It's highly inspired by [`egui-snarl`](https://github.com/zakarumych/egui-snarl), that
-implements data driven approach for graph data structure.
+MSRV is 1.75, with RPITIT
 
-This library implements data driven spreadsheet control
+# Features
 
+- [x] Undo/Redo for every editions
+- [x] Show/Hide/Reorder columns
+- [x] Row duplication / removal
+- [ ] Keyboard navigation
+- [ ] Internal clipboard support
+- [ ] System clipboard support
+- [ ] Tutorials documentation

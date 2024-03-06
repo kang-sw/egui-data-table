@@ -1,102 +1,237 @@
+use egui::{Key, KeyboardShortcut, Modifiers};
 pub use egui_extras::Column as TableColumnConfig;
+
+/// The primary trait for the spreadsheet viewer.
+// TODO: When lifetime for `'static` is stabilized; remove the `static` bound.
+pub trait RowViewer<R>: 'static {
+    /// Number of columns. Changing this will invalidate the table rendering status
+    /// totally(including undo histories), therefore frequently changing this value is
+    /// discouraged.
+    fn num_columns(&mut self) -> usize;
+
+    /// Name of the column. This can be dynamically changed.
+    fn column_name(&mut self, column: usize) -> &str;
+
+    /// Returns the rendering configuration for the column.
+    fn column_render_config(&mut self, column: usize) -> TableColumnConfig {
+        let _ = column;
+        TableColumnConfig::auto().resizable(true)
+    }
+
+    /// Returns if given column is 'sortable'
+    fn is_sortable_column(&mut self, column: usize) -> bool {
+        let _ = column;
+        false
+    }
+
+    /// Compare two column contents for sort.
+    fn create_cell_comparator(&mut self) -> impl Fn(&R, &R, usize) -> std::cmp::Ordering {
+        |_, _, _| std::cmp::Ordering::Equal
+    }
+
+    /// Display values of the cell. Any input will be consumed before table renderer;
+    /// therefore any widget rendered inside here is read-only.
+    ///
+    /// To deal with input, use `cell_edit` method. If you need to deal with drag/drop,
+    /// see [`RowViewer::on_cell_view_response`] which delivers resulting response of
+    /// containing cell.
+    fn draw_cell_view(&mut self, ui: &mut egui::Ui, row: &R, column: usize);
+
+    /// Use this to check if given cell is going to take any dropped payload / use as drag
+    /// source.
+    fn on_cell_view_response(
+        &mut self,
+        row: &R,
+        column: usize,
+        resp: &egui::Response,
+    ) -> Option<Box<R>> {
+        let _ = (row, column, resp);
+        None
+    }
+
+    /// Edit values of the cell.
+    fn draw_cell_editor(
+        &mut self,
+        ui: &mut egui::Ui,
+        row: &mut R,
+        column: usize,
+    ) -> Option<egui::Response>;
+
+    /// Set the value of a column in a row.
+    fn set_cell_value(&mut self, src: &R, dst: &mut R, column: usize);
+
+    /// Create a new empty row.
+    fn new_empty_row(&mut self) -> R;
+
+    /// Create duplication of existing row.
+    fn clone_row(&mut self, row: &R) -> R;
+
+    /// Get hash value of a filter. This is used to determine if the filter has changed.
+    fn row_filter_hash(&mut self) -> &impl std::hash::Hash {
+        &()
+    }
+
+    /// Create a filter for the row. Filter is applied on every table invalidation.
+    fn create_row_filter(&mut self) -> impl Fn(&R) -> bool {
+        |_| true
+    }
+
+    /// Return hotkeys for the current context.
+    fn hotkeys(&mut self, context: &UiActionContext) -> Vec<(egui::KeyboardShortcut, UiAction)> {
+        self::default_hotkeys(context)
+    }
+
+    /// Get trivial configurations for renderer.
+    fn trivial_config(&mut self) -> TrivialConfig {
+        Default::default()
+    }
+}
+
+/* ------------------------------------------- Hotkeys ------------------------------------------ */
+
+/// Base context for determining current input state.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct UiActionContext {
+    pub cursor: UiCursorState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UiCursorState {
+    Idle,
+    Editing,
+    SelectOne,
+    SelectMany,
+}
+
+impl UiCursorState {
+    pub fn is_idle(&self) -> bool {
+        matches!(self, Self::Idle)
+    }
+
+    pub fn is_editing(&self) -> bool {
+        matches!(self, Self::Editing)
+    }
+
+    pub fn is_selecting(&self) -> bool {
+        matches!(self, Self::SelectOne | Self::SelectMany)
+    }
+}
+
+/* ----------------------------------------- Ui Actions ----------------------------------------- */
 
 /// Represents a user interaction, calculated from the UI input state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum UiAction {
-    ActivateSelectedCell,
-    CancelEdit,
-    CommitEdit,
+    SelectionStartEditing,
+
+    CancelEdition,
+    CommitEdition,
+
+    CommitEditionAndMove(MoveDirection),
+
     Undo,
     Redo,
+
+    MoveSelection(MoveDirection),
+    CopySelection,
+    CutSelection,
+    PasteInPlace,
+    PasteInsert,
+
+    DuplicateRow,
+    DeleteSelection,
+    DeleteRow,
+
+    NavPageDown,
+    NavPageUp,
+    NavTop,
+    NavBottom,
+
+    SelectionDuplicateValues,
+    SelectAll,
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum CellUiState {
-    #[default]
-    View,
-    EditStarted,
-    Editing,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MoveDirection {
+    Up,
+    Down,
+    Left,
+    Right,
 }
 
-impl CellUiState {
-    pub fn is_editing(self) -> bool {
-        matches!(self, Self::EditStarted | Self::Editing)
+pub fn default_hotkeys(context: &UiActionContext) -> Vec<(KeyboardShortcut, UiAction)> {
+    let c = context.cursor;
+
+    fn shortcut(actions: &[(Modifiers, Key, UiAction)]) -> Vec<(egui::KeyboardShortcut, UiAction)> {
+        actions
+            .iter()
+            .map(|(m, k, a)| (egui::KeyboardShortcut::new(*m, *k), *a))
+            .collect()
+    }
+
+    let none = Modifiers::NONE;
+    let ctrl = Modifiers::CTRL;
+    let alt = Modifiers::ALT;
+    let shift = Modifiers::SHIFT;
+
+    use UiAction::CommitEditionAndMove;
+    type MD = MoveDirection;
+
+    if c.is_editing() {
+        shortcut(&[
+            (none, Key::Escape, UiAction::CommitEdition),
+            (ctrl, Key::Escape, UiAction::CancelEdition),
+            (shift, Key::Enter, CommitEditionAndMove(MD::Up)),
+            (ctrl, Key::Enter, CommitEditionAndMove(MD::Down)),
+            (shift, Key::Tab, CommitEditionAndMove(MD::Left)),
+            (none, Key::Tab, CommitEditionAndMove(MD::Right)),
+        ])
+    } else {
+        shortcut(&[
+            (ctrl, Key::X, UiAction::CutSelection),
+            (ctrl, Key::C, UiAction::CopySelection),
+            (ctrl | shift, Key::V, UiAction::PasteInsert),
+            (ctrl, Key::V, UiAction::PasteInPlace),
+            (ctrl, Key::Y, UiAction::Redo),
+            (ctrl, Key::Z, UiAction::Undo),
+            (none, Key::Enter, UiAction::SelectionStartEditing),
+            (none, Key::ArrowUp, UiAction::MoveSelection(MD::Up)),
+            (none, Key::ArrowDown, UiAction::MoveSelection(MD::Down)),
+            (none, Key::ArrowLeft, UiAction::MoveSelection(MD::Left)),
+            (none, Key::ArrowRight, UiAction::MoveSelection(MD::Right)),
+            (shift, Key::V, UiAction::PasteInsert),
+            (alt, Key::V, UiAction::PasteInsert),
+            (ctrl | shift, Key::D, UiAction::DuplicateRow),
+            (ctrl, Key::D, UiAction::SelectionDuplicateValues),
+            (ctrl, Key::A, UiAction::SelectAll),
+            (ctrl, Key::Delete, UiAction::DeleteRow),
+            (none, Key::Delete, UiAction::DeleteSelection),
+            (none, Key::Backspace, UiAction::DeleteSelection),
+            (none, Key::PageUp, UiAction::NavPageUp),
+            (none, Key::PageDown, UiAction::NavPageDown),
+            (none, Key::Home, UiAction::NavTop),
+            (none, Key::End, UiAction::NavBottom),
+        ])
     }
 }
 
-#[derive(Debug, Clone)]
-#[non_exhaustive]
+/* ---------------------------------------- Configuration --------------------------------------- */
+
+#[derive(Clone, Debug)]
 pub struct TrivialConfig {
+    /// If specify this as [`None`], the heterogeneous row height will be used.
+    pub table_row_height: Option<f32>,
+
+    /// Maximum number of undo history. This is applied when actual action is performed.
     pub max_undo_history: usize,
 }
 
 impl Default for TrivialConfig {
     fn default() -> Self {
         Self {
+            table_row_height: None,
             max_undo_history: 100,
         }
     }
-}
-
-pub trait RowViewer<R: Send>: std::hash::Hash {
-    fn num_columns(&mut self) -> usize;
-
-    fn column_name(&mut self, column: usize) -> &str;
-
-    fn column_config(&mut self, column: usize) -> TableColumnConfig {
-        let _ = column;
-        TableColumnConfig::auto().resizable(true)
-    }
-
-    fn is_sortable_column(&mut self, column: usize) -> bool;
-
-    fn compare_column(&mut self, row_l: &R, row_r: &R, column: usize) -> std::cmp::Ordering;
-
-    /// Should return true if the column is modified. Otherwise, it won't be updated.
-    ///
-    /// When it's activated, the `active` flag is set to true. You can utilize this to
-    /// expand editor, show popup, etc.
-    fn draw_cell(&mut self, ui: &mut egui::Ui, row: &mut R, column: usize, state: CellUiState);
-
-    fn empty_row(&mut self) -> R;
-
-    fn clone_column(&mut self, src: &R, dst: &mut R, column: usize);
-
-    /// Tries to clone between different columns.
-    fn clone_column_arbitrary(
-        &mut self,
-        src: &R,
-        src_column: usize,
-        dst: &mut R,
-        dst_column: usize,
-    ) {
-        debug_assert!(src_column != dst_column);
-        let _ = (src, dst, src_column, dst_column);
-    }
-
-    fn clone_column_smart(&mut self, src: &R, dst: &mut R, column: usize, offset: usize) {
-        let _ = offset;
-        self.clone_column(src, dst, column);
-    }
-
-    fn clone_row(&mut self, src: &R) -> R;
-
-    fn clear_column(&mut self, row: &mut R, column: usize);
-
-    fn filter_row(&mut self, row: &R) -> bool {
-        true
-    }
-
-    fn detect_hotkey(&mut self, ui: &egui::InputState) -> Option<UiAction> {
-        self::detect_hotkey_excel(ui)
-    }
-
-    fn trivial_configs(&mut self) -> TrivialConfig {
-        Default::default()
-    }
-}
-
-pub fn detect_hotkey_excel(input: &egui::InputState) -> Option<UiAction> {
-    // TODO
-    None
 }
