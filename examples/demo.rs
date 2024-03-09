@@ -2,7 +2,7 @@ use std::{borrow::Cow, iter::repeat_with};
 
 use egui::{Response, Sense, Widget};
 use egui_data_table::{
-    viewer::{default_hotkeys, UiActionContext},
+    viewer::{default_hotkeys, CellWriteContext, UiActionContext},
     RowViewer,
 };
 
@@ -10,6 +10,7 @@ use egui_data_table::{
 
 struct Viewer {
     filter: String,
+    row_protection: bool,
     hotkeys: Vec<(egui::KeyboardShortcut, egui_data_table::UiAction)>,
 }
 
@@ -65,6 +66,24 @@ impl RowViewer<Row> for Viewer {
             3 => dst.3 = src.3,
             _ => unreachable!(),
         }
+    }
+
+    fn confirm_cell_write_by_ui(
+        &mut self,
+        current: &Row,
+        _next: &Row,
+        _column: usize,
+        _context: CellWriteContext,
+    ) -> bool {
+        if !self.row_protection {
+            return true;
+        }
+
+        !current.2
+    }
+
+    fn confirm_row_deletion_by_ui(&mut self, row: &Row) -> bool {
+        !row.2
     }
 
     fn show_cell_view(&mut self, ui: &mut egui::Ui, row: &Row, column: usize) {
@@ -175,6 +194,7 @@ impl Default for DemoApp {
             viewer: Viewer {
                 filter: String::new(),
                 hotkeys: Vec::new(),
+                row_protection: false,
             },
         }
     }
@@ -209,8 +229,18 @@ impl eframe::App for DemoApp {
                 ui.label("Name Filter");
                 ui.text_edit_singleline(&mut self.viewer.filter);
 
-                ui.add(egui::Label::new("Drag me and drop on any cell").sense(Sense::drag()))
+                ui.add(egui::Button::new("Drag me and drop on any cell").sense(Sense::drag()))
+                    .on_hover_text(
+                        "Dropping this will replace the cell \
+                        content with some predefined value.",
+                    )
                     .dnd_set_drag_payload(String::from("Hallo~"));
+
+                ui.checkbox(&mut self.viewer.row_protection, "Row Proection")
+                    .on_hover_text(
+                        "If checked, any rows `Is Student` marked \
+                        won't be deleted or overwritten by UI actions.",
+                    );
             })
         });
 

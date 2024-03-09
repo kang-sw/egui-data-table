@@ -5,7 +5,7 @@ use egui_extras::Column;
 use tap::prelude::{Pipe, Tap};
 
 use crate::{
-    viewer::{RowViewer, TrivialConfig},
+    viewer::{EmptyRowCreateContext, RowViewer, TrivialConfig},
     DataTable, UiAction,
 };
 
@@ -36,7 +36,9 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
         Self {
             state: Some(table.ui.take().unwrap_or_default().tap_mut(|x| {
                 if table.rows.is_empty() {
-                    table.rows.push(viewer.new_empty_row());
+                    table
+                        .rows
+                        .push(viewer.new_empty_row_for(EmptyRowCreateContext::InsertNewLine));
                     x.force_mark_dirty();
                 }
 
@@ -568,7 +570,10 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     if let Some(new_value) =
                         viewer.on_cell_view_response(&table.rows[row_id.0], col.0, &resp)
                     {
-                        commands.push(Command::SetCell(new_value, row_id, *col));
+                        commands.push(Command::SetCells {
+                            slab: vec![*new_value].into_boxed_slice(),
+                            values: vec![(row_id, *col, RowSlabIndex(0))].into_boxed_slice(),
+                        });
                     }
                 }
             }
