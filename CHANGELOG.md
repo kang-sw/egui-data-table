@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog],
 and this project adheres to [Semantic Versioning].
 
+## [0.2.0] - 2024-03-09
+
+### Changed
+
+- `viewer::UiAction` is marked as `#[non_exhaustive]`
+  - New enum variant `UiAction::InsertEmptyRows(NonZeroUsize)`, an action for inserting number of empty rows.
+
 ## [0.1.2] - 2024-03-09
 
 Add more controls for viewer.

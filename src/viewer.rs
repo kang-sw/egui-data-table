@@ -100,6 +100,12 @@ pub trait RowViewer<R>: 'static {
     /// Create a new empty row.
     fn new_empty_row(&mut self) -> R;
 
+    /// Create a new empty row under the given context.
+    fn new_empty_row_for(&mut self, context: EmptyRowCreateContext) -> R {
+        let _ = context;
+        self.new_empty_row()
+    }
+
     /// Create duplication of existing row.
     ///
     /// You may want to override this method for more efficient duplication.
@@ -111,7 +117,7 @@ pub trait RowViewer<R>: 'static {
         dst
     }
 
-    /// Create a new row for insertion. This is called when user is inserting a new row.
+    /// Create duplication of existing row for insertion.
     fn clone_row_for_insertion(&mut self, row: &R) -> R {
         self.clone_row(row)
     }
@@ -142,6 +148,19 @@ pub enum CellWriteContext {
 
     /// Value is being cleared by cut/delete operation.
     Clear,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum EmptyRowCreateContext {
+    /// Row is created to be used as simple default template.
+    Default,
+
+    /// Row is created to be used explicit `empty` value when deletion
+    DeletionDefault,
+
+    /// Row is created to be inserted as a new row.
+    InsertNewLine,
 }
 
 /* ------------------------------------------- Hotkeys ------------------------------------------ */

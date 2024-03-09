@@ -13,7 +13,9 @@ use tap::prelude::{Pipe, Tap};
 
 use crate::{
     default,
-    viewer::{CellWriteContext, MoveDirection, UiActionContext, UiCursorState},
+    viewer::{
+        CellWriteContext, EmptyRowCreateContext, MoveDirection, UiActionContext, UiCursorState,
+    },
     DataTable, RowViewer, UiAction,
 };
 
@@ -1001,7 +1003,12 @@ impl<R> UiState<R> {
                     .pastes
                     .iter()
                     .filter(|&(offset, ..)| replace(&mut last, offset.0) != offset.0)
-                    .map(|(offset, ..)| (*offset, vwr.new_empty_row()))
+                    .map(|(offset, ..)| {
+                        (
+                            *offset,
+                            vwr.new_empty_row_for(EmptyRowCreateContext::InsertNewLine),
+                        )
+                    })
                     .collect::<BTreeMap<_, _>>();
 
                 for (offset, column, slab_id) in &*clip.pastes {
@@ -1026,7 +1033,7 @@ impl<R> UiState<R> {
                     .collect_selected_rows()
                     .into_iter()
                     .map(|x| self.cc_rows[x.0])
-                    .map(|r| vwr.clone_row(&table.rows[r.0]))
+                    .map(|r| vwr.clone_row_for_insertion(&table.rows[r.0]))
                     .collect();
 
                 let pos = if self.sort.is_empty() {
@@ -1038,7 +1045,7 @@ impl<R> UiState<R> {
                 vec![Command::InsertRows(pos, rows)]
             }
             UiAction::DeleteSelection => {
-                let default = vwr.new_empty_row();
+                let default = vwr.new_empty_row_for(EmptyRowCreateContext::DeletionDefault);
                 let sels = self.collect_selection();
                 let slab = vec![default].into_boxed_slice();
 

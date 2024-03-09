@@ -2,7 +2,7 @@ use std::{borrow::Cow, iter::repeat_with};
 
 use egui::{Response, Sense, Widget};
 use egui_data_table::{
-    viewer::{default_hotkeys, UiActionContext},
+    viewer::{default_hotkeys, CellWriteContext, UiActionContext},
     RowViewer,
 };
 
@@ -63,6 +63,22 @@ impl RowViewer<Row> for Viewer {
             1 => dst.1 = src.1,
             2 => dst.2 = src.2,
             3 => dst.3 = src.3,
+            _ => unreachable!(),
+        }
+    }
+
+    fn confirm_cell_write(
+        &mut self,
+        current: &Row,
+        next: &Row,
+        column: usize,
+        context: CellWriteContext,
+    ) -> bool {
+        let _ = (current, next);
+
+        match column {
+            0..=2 => true,
+            3 => context != CellWriteContext::Clear,
             _ => unreachable!(),
         }
     }
