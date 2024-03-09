@@ -568,7 +568,10 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     if let Some(new_value) =
                         viewer.on_cell_view_response(&table.rows[row_id.0], col.0, &resp)
                     {
-                        commands.push(Command::SetCell(new_value, row_id, *col));
+                        commands.push(Command::SetCells {
+                            slab: vec![*new_value].into_boxed_slice(),
+                            values: vec![(row_id, *col, RowSlabIndex(0))].into_boxed_slice(),
+                        });
                     }
                 }
             }

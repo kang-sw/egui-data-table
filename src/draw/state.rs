@@ -13,7 +13,7 @@ use tap::prelude::{Pipe, Tap};
 
 use crate::{
     default,
-    viewer::{MoveDirection, UiActionContext, UiCursorState},
+    viewer::{CellWriteContext, MoveDirection, UiActionContext, UiCursorState},
     DataTable, RowViewer, UiAction,
 };
 
@@ -622,6 +622,28 @@ impl<R> UiState<R> {
                 )]
             }
 
+            Command::CcSetCells {
+                context,
+                slab,
+                values,
+            } => {
+                let mut values = values.to_vec();
+
+                values.retain(|(row, col, slab_id)| {
+                    vwr.confirm_cell_write(&table.rows[row.0], &slab[slab_id.0], col.0, context)
+                });
+
+                return self.push_new_command(
+                    table,
+                    vwr,
+                    Command::SetCells {
+                        slab,
+                        values: values.into_boxed_slice(),
+                    },
+                    capacity,
+                );
+            }
+
             Command::SetCells { ref values, .. } => {
                 let mut keys = Vec::from_iter(values.iter().map(|(r, ..)| *r));
                 keys.dedup();
@@ -658,12 +680,6 @@ impl<R> UiState<R> {
                     .map(|x| vwr.clone_row(&table.rows[x.0]))
                     .collect();
                 vec![Command::InsertRows(RowIdx(indices[0].0), values)]
-            }
-            Command::SetCell(_, row_id, _) => {
-                vec![Command::SetRowValue(
-                    row_id,
-                    vwr.clone_row(&table.rows[row_id.0]).into(),
-                )]
             }
         };
 
@@ -710,11 +726,6 @@ impl<R> UiState<R> {
                 table.dirty_flag = true;
                 table.rows[row_id.0] = vwr.clone_row(value);
             }
-            Command::SetCell(value, row, col) => {
-                self.cc_num_frame_from_last_edit = 0;
-                table.dirty_flag = true;
-                vwr.set_cell_value(value, &mut table.rows[row.0], col.0);
-            }
             Command::SetCells { slab, values } => {
                 self.cc_num_frame_from_last_edit = 0;
                 table.dirty_flag = true;
@@ -752,7 +763,8 @@ impl<R> UiState<R> {
             | Command::CcEditStart(..)
             | Command::CcCommitEdit
             | Command::CcCancelEdit
-            | Command::CcSetSelection(_) => unreachable!(),
+            | Command::CcSetSelection(_)
+            | Command::CcSetCells { .. } => unreachable!(),
         }
     }
 
@@ -945,12 +957,13 @@ impl<R> UiState<R> {
                 let pivot_row = vwr.clone_row(&table.rows[self.cc_rows[ic_r.0].0]);
                 let sels = self.collect_selection();
 
-                vec![Command::SetCells {
+                vec![Command::CcSetCells {
                     slab: [pivot_row].into(),
                     values: sels
                         .into_iter()
                         .map(|(r, c)| (self.cc_rows[r.0], self.vis_cols[c.0], RowSlabIndex(0)))
                         .collect(),
+                    context: CellWriteContext::Paste,
                 }]
             }
             UiAction::PasteInPlace => {
@@ -972,9 +985,10 @@ impl<R> UiState<R> {
                     desired.push((row, group.map(|(_, c, ..)| *c).collect()))
                 }
 
-                vec![Command::SetCells {
+                vec![Command::CcSetCells {
                     slab: clip.slab.iter().map(|x| vwr.clone_row(x)).collect(),
                     values: values.into_boxed_slice(),
+                    context: CellWriteContext::Paste,
                 }]
             }
             UiAction::PasteInsert => {
@@ -1028,12 +1042,13 @@ impl<R> UiState<R> {
                 let sels = self.collect_selection();
                 let slab = vec![default].into_boxed_slice();
 
-                vec![Command::SetCells {
+                vec![Command::CcSetCells {
                     slab,
                     values: sels
                         .into_iter()
                         .map(|(r, c)| (self.cc_rows[r.0], self.vis_cols[c.0], RowSlabIndex(0)))
                         .collect(),
+                    context: CellWriteContext::Clear,
                 }]
             }
             UiAction::DeleteRow => {
@@ -1210,11 +1225,15 @@ pub(crate) enum Command<R> {
     CcSetSelection(Vec<VisSelection>), // Cache - Set Selection
 
     SetRowValue(RowIdx, Box<R>),
+    CcSetCells {
+        slab: Box<[R]>,
+        values: Box<[(RowIdx, ColumnIdx, RowSlabIndex)]>,
+        context: CellWriteContext,
+    },
     SetCells {
         slab: Box<[R]>,
         values: Box<[(RowIdx, ColumnIdx, RowSlabIndex)]>,
     },
-    SetCell(Box<R>, RowIdx, ColumnIdx),
 
     InsertRows(RowIdx, Box<[R]>),
     RemoveRow(Vec<RowIdx>),

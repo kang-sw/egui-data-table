@@ -78,6 +78,25 @@ pub trait RowViewer<R>: 'static {
     /// Set the value of a column in a row.
     fn set_cell_value(&mut self, src: &R, dst: &mut R, column: usize);
 
+    /// In the write context that happens outside of `show_cell_editor`, this method is
+    /// called on every cell value editions.
+    fn confirm_cell_write(
+        &mut self,
+        current: &R,
+        next: &R,
+        column: usize,
+        context: CellWriteContext,
+    ) -> bool {
+        let _ = (current, next, column, context);
+        true
+    }
+
+    /// Before removing each row, this method is called to confirm the deletion from the
+    /// viewer. This won't be called during the undo/redo operation!
+    fn confirm_row_deletion(&mut self, _row: &R) -> bool {
+        true
+    }
+
     /// Create a new empty row.
     fn new_empty_row(&mut self) -> R;
 
@@ -92,6 +111,16 @@ pub trait RowViewer<R>: 'static {
         dst
     }
 
+    /// Create a new row for insertion. This is called when user is inserting a new row.
+    fn clone_row_for_insertion(&mut self, row: &R) -> R {
+        self.clone_row(row)
+    }
+
+    /// Called when a cell is selected/highlighted.
+    fn on_highlight_cell(&mut self, row: &R, column: usize) {
+        let _ = (row, column);
+    }
+
     /// Return hotkeys for the current context.
     fn hotkeys(&mut self, context: &UiActionContext) -> Vec<(egui::KeyboardShortcut, UiAction)> {
         self::default_hotkeys(context)
@@ -101,6 +130,18 @@ pub trait RowViewer<R>: 'static {
     fn trivial_config(&mut self) -> TrivialConfig {
         Default::default()
     }
+}
+
+/* ------------------------------------------- Context ------------------------------------------ */
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CellWriteContext {
+    /// Value is being pasted/duplicated from different row.
+    Paste,
+
+    /// Value is being cleared by cut/delete operation.
+    Clear,
 }
 
 /* ------------------------------------------- Hotkeys ------------------------------------------ */
