@@ -20,8 +20,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
       - run: rustup target add wasm32-unknown-unknown
-      - run: cargo install trunk
-      - run: trunk build --release --verbose --public-url egui-data-table ./demo/index.html
+      - run: cargo install trunk --locked
+      - run: trunk build --release --verbose --public-url /egui-data-table ./demo/index.html
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
