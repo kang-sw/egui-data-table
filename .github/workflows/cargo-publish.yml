@@ -10,31 +10,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Caching
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/.crates.toml
-            ~/.cargo/.crates2.json
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Build
-        run: cargo build
-      - name: Test
-        run: cargo test
-      - name: Login
-        run: cargo login ${{ secrets.CRATES_IO_TOKEN }}
-      - name: Install Semver Checks
-        run: cargo install cargo-semver-checks
-      - name: Semver Checks
-        run: cargo semver-checks
-      - name: Publish
-        run: cargo publish
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build
+      - run: cargo test
+      - run: cargo login ${{ secrets.CRATES_IO_TOKEN }}
+      - run: cargo install cargo-semver-checks
+      - run: cargo semver-checks
+      - run: cargo publish
         
         
