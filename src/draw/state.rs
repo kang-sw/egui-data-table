@@ -954,7 +954,7 @@ impl<R> UiState<R> {
 
                 for vis_row in self.collect_selected_rows() {
                     vis_map.insert(vis_row, slab.len());
-                    slab.push(vwr.clone_row(&table.rows[self.cc_rows[vis_row.0].0]));
+                    slab.push(vwr.clone_row_as_copied_base(&table.rows[self.cc_rows[vis_row.0].0]));
                 }
 
                 self.clipboard = Some(Clipboard {
@@ -981,7 +981,7 @@ impl<R> UiState<R> {
                 }
             }
             UiAction::SelectionDuplicateValues => {
-                let pivot_row = vwr.clone_row(&table.rows[self.cc_rows[ic_r.0].0]);
+                let pivot_row = vwr.clone_row_as_copied_base(&table.rows[self.cc_rows[ic_r.0].0]);
                 let sels = self.collect_selection();
 
                 vec![Command::CcSetCells {

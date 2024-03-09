@@ -123,6 +123,12 @@ pub trait RowViewer<R>: 'static {
         self.clone_row(row)
     }
 
+    /// Create duplication of existing row for clipboard. Useful when you need to specify
+    /// different behavior for clipboard duplication. (e.g. unset transient flag)
+    fn clone_row_as_copied_base(&mut self, row: &R) -> R {
+        self.clone_row(row)
+    }
+
     /// Called when a cell is selected/highlighted.
     fn on_highlight_cell(&mut self, row: &R, column: usize) {
         let _ = (row, column);
@@ -157,7 +163,7 @@ pub enum EmptyRowCreateContext {
     /// Row is created to be used as simple default template.
     Default,
 
-    /// Row is created to be used explicit `empty` value when deletion
+    /// Row is created to be used as explicit `empty` value when deletion
     DeletionDefault,
 
     /// Row is created to be inserted as a new row.
