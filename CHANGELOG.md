@@ -14,9 +14,9 @@ and this project adheres to [Semantic Versioning].
 
 ### Changed
 
-- `viewer::UiAction` is marked as `#[non_exhaustive]`
-  - New enum variant `UiAction::InsertEmptyRows(NonZeroUsize)`, an action for inserting number of empty rows.
-
+- **BREAKING** 
+  - `viewer::UiAction` is now `#[non_exhaustive]`
+    - New enum variant `UiAction::InsertEmptyRows(NonZeroUsize)`, an action for inserting number of empty rows.
 
 ## [0.1.2] - 2024-03-09
 
