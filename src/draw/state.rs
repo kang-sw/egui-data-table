@@ -632,7 +632,12 @@ impl<R> UiState<R> {
                 let mut values = values.to_vec();
 
                 values.retain(|(row, col, slab_id)| {
-                    vwr.confirm_cell_write(&table.rows[row.0], &slab[slab_id.0], col.0, context)
+                    vwr.confirm_cell_write_by_ui(
+                        &table.rows[row.0],
+                        &slab[slab_id.0],
+                        col.0,
+                        context,
+                    )
                 });
 
                 return self.push_new_command(
@@ -1063,6 +1068,7 @@ impl<R> UiState<R> {
                     .collect_selected_rows()
                     .into_iter()
                     .map(|x| self.cc_rows[x.0])
+                    .filter(|row| vwr.confirm_row_deletion_by_ui(&table.rows[row.0]))
                     .collect();
 
                 vec![Command::RemoveRow(rows)]

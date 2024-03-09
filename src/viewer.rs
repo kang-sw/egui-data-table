@@ -80,7 +80,7 @@ pub trait RowViewer<R>: 'static {
 
     /// In the write context that happens outside of `show_cell_editor`, this method is
     /// called on every cell value editions.
-    fn confirm_cell_write(
+    fn confirm_cell_write_by_ui(
         &mut self,
         current: &R,
         next: &R,
@@ -93,7 +93,8 @@ pub trait RowViewer<R>: 'static {
 
     /// Before removing each row, this method is called to confirm the deletion from the
     /// viewer. This won't be called during the undo/redo operation!
-    fn confirm_row_deletion(&mut self, _row: &R) -> bool {
+    fn confirm_row_deletion_by_ui(&mut self, row: &R) -> bool {
+        let _ = row;
         true
     }
 
