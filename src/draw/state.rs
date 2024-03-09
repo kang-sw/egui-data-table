@@ -682,11 +682,31 @@ impl<R> UiState<R> {
                 vec![Command::RemoveRow(values)]
             }
             Command::RemoveRow(ref indices) => {
-                let values = indices
-                    .iter()
-                    .map(|x| vwr.clone_row(&table.rows[x.0]))
-                    .collect();
-                vec![Command::InsertRows(RowIdx(indices[0].0), values)]
+                // Ensure indices are sorted.
+                debug_assert!(indices.windows(2).all(|x| x[0] < x[1]));
+
+                // Collect contiguous chunks.
+                let mut chunks = vec![vec![indices[0]]];
+
+                for index in indices.windows(2) {
+                    if index[0].0 + 1 == index[1].0 {
+                        chunks.last_mut().unwrap().push(index[1]);
+                    } else {
+                        chunks.push(vec![index[1]]);
+                    }
+                }
+
+                chunks
+                    .into_iter()
+                    .map(|x| {
+                        Command::InsertRows(
+                            x[0],
+                            x.into_iter()
+                                .map(|x| vwr.clone_row(&table.rows[x.0]))
+                                .collect(),
+                        )
+                    })
+                    .collect()
             }
         };
 
