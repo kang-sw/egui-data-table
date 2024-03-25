@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning].
   - `viewer::UiAction` is now `#[non_exhaustive]`
     - New enum variant `UiAction::InsertEmptyRows(NonZeroUsize)`, an action for inserting number of empty rows.
 
+## [0.1.3] - 2024-03-25
+
+### Fixed
+
+- Panic on row removal due to invalid index access 
+
 ## [0.1.2] - 2024-03-09
 
 Add more controls for viewer.
@@ -57,8 +63,3 @@ Add more controls for viewer.
 <!-- Links -->
 [keep a changelog]: https://keepachangelog.com/en/1.0.0/
 [semantic versioning]: https://semver.org/spec/v2.0.0.html
-
-<!-- Versions -->
-[unreleased]: https://github.com/kang-sw/egui-data-table/compare/v0.0.2...HEAD
-[0.0.2]: https://github.com/kang-sw/egui-data-table/compare/v0.0.1...v0.0.2
-[0.0.1]: https://github.com/kang-sw/egui-data-table/releases/tag/v0.0.1
