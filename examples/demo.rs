@@ -83,6 +83,10 @@ impl RowViewer<Row> for Viewer {
     }
 
     fn confirm_row_deletion_by_ui(&mut self, row: &Row) -> bool {
+        if !self.row_protection {
+            return true;
+        }
+
         !row.2
     }
 
