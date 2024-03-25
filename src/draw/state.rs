@@ -682,6 +682,11 @@ impl<R> UiState<R> {
                 vec![Command::RemoveRow(values)]
             }
             Command::RemoveRow(ref indices) => {
+                if indices.is_empty() {
+                    // From various sources, it can be just 'empty' removal command
+                    return;
+                }
+
                 // Ensure indices are sorted.
                 debug_assert!(indices.windows(2).all(|x| x[0] < x[1]));
 
