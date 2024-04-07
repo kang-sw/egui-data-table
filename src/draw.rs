@@ -669,7 +669,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
             if matches!(cmd, Command::CcCommitEdit) {
                 // If any commit action is detected, release any remaining focus.
                 ctx.memory_mut(|x| {
-                    if let Some(fc) = x.focus() {
+                    if let Some(fc) = x.focused() {
                         x.surrender_focus(fc)
                     }
                 });

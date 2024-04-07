@@ -205,6 +205,7 @@ impl UiCursorState {
 
 /// Represents a user interaction, calculated from the UI input state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum UiAction {
     SelectionStartEditing,
 

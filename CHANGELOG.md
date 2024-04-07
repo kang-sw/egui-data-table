@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## [0.1.4] - 2024-04-07
+
 ### Added
 
 - New API: `RowViewer::clone_row_as_copied_base`
@@ -17,7 +19,9 @@ and this project adheres to [Semantic Versioning].
 - **BREAKING** 
   - `viewer::UiAction` is now `#[non_exhaustive]`
     - New enum variant `UiAction::InsertEmptyRows(NonZeroUsize)`, an action for inserting number of empty rows.
-
+- Dependencies
+  - egui 0.26 -> 0.27
+  
 ## [0.1.3] - 2024-03-25
 
 ### Fixed
