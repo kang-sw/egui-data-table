@@ -94,7 +94,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
             .drag_to_scroll(false) // Drag is used for selection;
             .striped(true)
             .max_scroll_height(f32::MAX)
-            .sense(Sense::click_and_drag().tap_mut(|x| x.focusable = true))
+            .sense(Sense::click_and_drag().tap_mut(|s| s.focusable = true))
             .header(20., |mut h| {
                 h.set_selected(s.cci_has_focus);
                 h.col(|ui| {
@@ -403,7 +403,6 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
 
                 let (rect, resp) = row.col(|ui| {
                     let ui_max_rect = ui.max_rect();
-                    // ui.set_enabled(false);
 
                     if is_interactive_cell {
                         ui.painter().rect_filled(
@@ -418,14 +417,21 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
 
                     // Actual widget rendering happens within this line.
 
-                    ui.set_enabled(false);
+                    // ui.set_enabled(false);
                     ui.style_mut()
                         .visuals
                         .widgets
                         .noninteractive
                         .fg_stroke
                         .color = visual.strong_text_color();
-                    viewer.show_cell_view(ui, &table.rows[row_id.0], col.0);
+
+                    // FIXME: After egui 0.27, now the widgets spawned inside this closure
+                    // intercepts interactions, which is basically natural behavior(Upper layer
+                    // widgets). However, this change breaks current implementation which relies on
+                    // the previous table behavior.
+                    ui.add_enabled_ui(false, |ui| {
+                        viewer.show_cell_view(ui, &table.rows[row_id.0], col.0);
+                    });
 
                     if selected {
                         ui.painter().rect_stroke(
@@ -437,6 +443,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                             },
                         );
                     }
+
                     if interactive_row.is_some() && !is_editing {
                         let st = Stroke {
                             width: 1.,
