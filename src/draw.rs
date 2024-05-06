@@ -1,6 +1,8 @@
 use std::mem::{replace, take};
 
-use egui::{Align, Color32, Event, Layout, PointerButton, Rect, Response, RichText, Sense, Stroke};
+use egui::{
+    Align, Color32, Event, Layout, PointerButton, Rect, Response, RichText, Sense, Stroke, Widget,
+};
 use egui_extras::Column;
 use tap::prelude::{Pipe, Tap};
 
@@ -127,7 +129,9 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                                 ui.monospace(" ");
                             }
 
-                            ui.label(viewer.column_name(col.0));
+                            egui::Label::new(viewer.column_name(col.0))
+                                .selectable(false)
+                                .ui(ui);
                         });
 
                         painter = Some(ui.painter().clone());
