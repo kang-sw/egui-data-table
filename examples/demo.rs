@@ -33,7 +33,13 @@ impl RowViewer<Row> for Viewer {
     }
 
     fn column_name(&mut self, column: usize) -> Cow<'static, str> {
-        ["Name (Click To Sort)", "Age", "Is Student", "Grade"][column].into()
+        [
+            "Name (Click to sort)",
+            "Age",
+            "Is Student (Not sortable)",
+            "Grade",
+        ][column]
+            .into()
     }
 
     fn is_sortable_column(&mut self, column: usize) -> bool {
