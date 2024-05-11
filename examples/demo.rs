@@ -66,7 +66,7 @@ impl RowViewer<Row> for Viewer {
 
     fn set_cell_value(&mut self, src: &Row, dst: &mut Row, column: usize) {
         match column {
-            0 => dst.0 = src.0.clone(),
+            0 => dst.0.clone_from(&src.0),
             1 => dst.1 = src.1,
             2 => dst.2 = src.2,
             3 => dst.3 = src.3,
@@ -166,7 +166,7 @@ impl RowViewer<Row> for Viewer {
         context: &UiActionContext,
     ) -> Vec<(egui::KeyboardShortcut, egui_data_table::UiAction)> {
         let hotkeys = default_hotkeys(context);
-        self.hotkeys = hotkeys.clone();
+        self.hotkeys.clone_from(&hotkeys);
         hotkeys
     }
 }

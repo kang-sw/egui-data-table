@@ -1020,7 +1020,7 @@ impl<R> UiState<R> {
                             (
                                 VisRowOffset(v_r.0 - offset.0),
                                 self.p.vis_cols[v_c.0],
-                                RowSlabIndex(vis_map[&v_r]),
+                                RowSlabIndex(vis_map[v_r]),
                             )
                         })
                         .collect(),

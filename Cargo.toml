@@ -25,4 +25,5 @@ fastrand = "2"
 names = { version = "0.14", default-features = false }
 
 [features]
+default = ["persistency"]
 persistency = ["dep:serde"]
