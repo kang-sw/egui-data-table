@@ -155,6 +155,9 @@ pub(crate) struct UiState<R> {
     /// Persistent data
     p: PersistData,
 
+    #[cfg(feature = "persistency")]
+    is_p_loaded: bool,
+
     /*
 
         SECTION: Cache - Rendering
@@ -211,6 +214,7 @@ pub(crate) struct UiState<R> {
 }
 
 #[cfg_attr(feature = "persistency", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Default)]
 struct PersistData {
     /// Cached number of columns.
     num_columns: usize,
@@ -256,11 +260,9 @@ impl<R> Default for UiState<R> {
             cc_desired_selection: None,
             cci_want_move_scroll: false,
             cci_page_row_count: 0,
-            p: PersistData {
-                num_columns: 0,
-                vis_cols: Vec::new(),
-                sort: Vec::new(),
-            },
+            p: default(),
+            #[cfg(feature = "persistency")]
+            is_p_loaded: false,
         }
     }
 }
@@ -295,7 +297,8 @@ impl<R> UiState<R> {
                 self.cc_dirty = true;
             }
 
-            // Defer validation of cache if it's still editing.
+            // Defer validation of cache if it's still editing. This is prevent annoying re-sort
+            // during editing multiple cells in-a-row without escape from insertion mode.
             {
                 if !self.is_editing() {
                     self.cc_num_frame_from_last_edit += 1;
@@ -329,6 +332,34 @@ impl<R> UiState<R> {
 
         self.p.vis_cols.extend((0..num_columns).map(ColumnIdx));
         self.cc_dirty = true;
+    }
+
+    #[cfg(feature = "persistency")]
+    pub fn validate_persistency<V: RowViewer<R>>(
+        &mut self,
+        ctx: &egui::Context,
+        ui_id: egui::Id,
+        vwr: &mut V,
+    ) {
+        if !self.is_p_loaded {
+            // Load initial storage status
+            self.is_p_loaded = true;
+            self.cc_dirty = true;
+            let p: PersistData =
+                ctx.memory_mut(|m| m.data.get_persisted(ui_id).unwrap_or_default());
+
+            if p.num_columns == self.p.num_columns {
+                // Data should only be copied when column count matches. Otherwise, we regard
+                // stored column differs from the current.
+                self.p = p;
+
+                // Only retain valid sorting configuration.
+                self.p.sort.retain(|(col, _)| vwr.is_sortable_column(col.0));
+            }
+        } else if self.cc_dirty {
+            // Copy current ui status into persistency storage.
+            ctx.memory_mut(|m| m.data.insert_persisted(ui_id, self.p.clone()));
+        }
     }
 
     pub fn validate_cc<V: RowViewer<R>>(&mut self, rows: &mut [R], vwr: &mut V) {

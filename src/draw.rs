@@ -304,6 +304,12 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
             }
         }
 
+        // Validate persistency state.
+        #[cfg(feature = "persistency")]
+        if viewer.persist_ui_state() {
+            s.validate_persistency(ctx, ui_id, viewer);
+        }
+
         // Validate ui state. Defer this as late as possible; since it may not be
         // called if the table area is out of the visible space.
         s.validate_cc(&mut table.rows, viewer);
