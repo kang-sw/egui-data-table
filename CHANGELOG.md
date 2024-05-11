@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## 0.2.2 - 2024-05-11
+
+### Added 
+
+- New `Cargo.toml` feature `persistency`
+- New API: `Viewer::persist_ui_state`
+  - To persist UI state over sessions, return `true` on this trait method.  
+
 ## [0.1.4] - 2024-04-07
 
 ### Added
