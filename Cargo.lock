@@ -994,6 +994,7 @@ dependencies = [
  "fastrand 2.0.2",
  "itertools",
  "names",
+ "serde",
  "tap",
 ]
 

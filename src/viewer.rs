@@ -143,6 +143,13 @@ pub trait RowViewer<R>: 'static {
     fn trivial_config(&mut self) -> TrivialConfig {
         Default::default()
     }
+
+    /// If you want to keep UI state on storage(i.e. persist over sessions), return true from this
+    /// function.
+    #[cfg(feature = "persistency")]
+    fn persist_ui_state(&self) -> bool {
+        false
+    }
 }
 
 /* ------------------------------------------- Context ------------------------------------------ */
