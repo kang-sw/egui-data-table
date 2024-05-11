@@ -169,6 +169,10 @@ impl RowViewer<Row> for Viewer {
         self.hotkeys.clone_from(&hotkeys);
         hotkeys
     }
+
+    fn persist_ui_state(&self) -> bool {
+        true
+    }
 }
 
 /* ------------------------------------------ View Loop ----------------------------------------- */
