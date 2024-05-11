@@ -74,6 +74,9 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
         let mut resp_ret = None::<Response>;
         let mut commands = Vec::<Command<R>>::new();
 
+        // NOTE: unlike RED and YELLOW which can be acquirable through 'error_bg_color' and
+        // 'warn_bg_color', there's no 'green' color which can be acquired from inherent theme.
+        // Following logic simply gets 'green' color from current background's brightness.
         let green = if visual.window_fill.g() > 128 {
             Color32::DARK_GREEN
         } else {
@@ -82,7 +85,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
 
         let mut builder = egui_extras::TableBuilder::new(ui).column(Column::auto());
 
-        for &column in s.vis_cols.iter() {
+        for &column in s.vis_cols().iter() {
             builder = builder.column(viewer.column_render_config(column.0));
         }
 
@@ -92,7 +95,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
         }
 
         builder
-            .columns(Column::auto(), s.num_columns() - s.vis_cols.len())
+            .columns(Column::auto(), s.num_columns() - s.vis_cols().len())
             .drag_to_scroll(false) // Drag is used for selection;
             .striped(true)
             .max_scroll_height(f32::MAX)
@@ -106,9 +109,9 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                 });
                 h.set_selected(false);
 
-                let has_any_hidden_col = s.vis_cols.len() != s.num_columns();
+                let has_any_hidden_col = s.vis_cols().len() != s.num_columns();
 
-                for (vis_col, &col) in s.vis_cols.iter().enumerate() {
+                for (vis_col, &col) in s.vis_cols().iter().enumerate() {
                     let vis_col = VisColumnPos(vis_col);
                     let mut painter = None;
                     let (_, resp) = h.col(|ui| {
@@ -209,7 +212,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                             ui.label("Hidden");
 
                             for col in (0..s.num_columns()).map(ColumnIdx) {
-                                if !s.vis_cols.contains(&col)
+                                if !s.vis_cols().contains(&col)
                                     && ui.button(viewer.column_name(col.0)).clicked()
                                 {
                                     commands.push(Command::CcShowColumn {
@@ -252,7 +255,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
         let s = self.state.as_mut().unwrap();
         let table = &mut *self.table;
         let visual = &style.visuals;
-        let visible_cols = s.vis_cols.clone();
+        let visible_cols = s.vis_cols().clone();
         let no_rounding = egui::Rounding::ZERO;
 
         let mut actions = Vec::<UiAction>::new();
@@ -508,8 +511,8 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                             max = max.max(sel.1 .0);
                         }
 
-                        let (r_min, _) = VisLinearIdx(min).row_col(s.vis_cols.len());
-                        let (r_max, _) = VisLinearIdx(max).row_col(s.vis_cols.len());
+                        let (r_min, _) = VisLinearIdx(min).row_col(s.vis_cols().len());
+                        let (r_max, _) = VisLinearIdx(max).row_col(s.vis_cols().len());
 
                         r_min != r_max
                     });
@@ -591,7 +594,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
 
             /* -------------------------------- Editor Rendering -------------------------------- */
             if let Some((should_focus, vis_column)) = edit_state {
-                let column = s.vis_cols[vis_column.0];
+                let column = s.vis_cols()[vis_column.0];
 
                 egui::Window::new("")
                     .id(ui_id.with(row_id).with(column))
