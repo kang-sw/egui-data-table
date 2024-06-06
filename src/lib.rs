@@ -2,6 +2,7 @@
 
 pub mod draw;
 pub mod viewer;
+pub mod widgets;
 
 pub use draw::Renderer;
 pub use viewer::{RowViewer, UiAction};

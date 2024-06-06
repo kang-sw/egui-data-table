@@ -25,7 +25,7 @@ macro_rules! int_ty {
     struct $name:ident ($($ty:ty),+); $($rest:tt)*) => {
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, PartialOrd, Ord)]
     $(#[$meta])*
-    pub(crate) struct $name($(pub(in crate::draw) $ty),+);
+    pub(crate) struct $name($(pub(crate) $ty),+);
 
     int_ty!($($rest)*);
 };
