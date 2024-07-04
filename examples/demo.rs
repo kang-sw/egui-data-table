@@ -46,20 +46,14 @@ impl RowViewer<Row> for Viewer {
         [true, true, false, true][column]
     }
 
-    fn create_cell_comparator(
-        &mut self,
-    ) -> impl for<'a, 'b> Fn(&'a Row, &'b Row, usize) -> std::cmp::Ordering {
-        fn cmp(row_l: &Row, row_r: &Row, column: usize) -> std::cmp::Ordering {
-            match column {
-                0 => row_l.0.cmp(&row_r.0),
-                1 => row_l.1.cmp(&row_r.1),
-                2 => unreachable!(),
-                3 => row_l.3.cmp(&row_r.3),
-                _ => unreachable!(),
-            }
+    fn compare_cell(&self, row_l: &Row, row_r: &Row, column: usize) -> std::cmp::Ordering {
+        match column {
+            0 => row_l.0.cmp(&row_r.0),
+            1 => row_l.1.cmp(&row_r.1),
+            2 => unreachable!(),
+            3 => row_l.3.cmp(&row_r.3),
+            _ => unreachable!(),
         }
-
-        cmp
     }
 
     fn new_empty_row(&mut self) -> Row {
@@ -159,8 +153,8 @@ impl RowViewer<Row> for Viewer {
         &self.filter
     }
 
-    fn create_row_filter(&mut self) -> impl Fn(&Row) -> bool {
-        |r| r.0.contains(&self.filter)
+    fn filter_row(&mut self, row: &Row) -> bool {
+        row.0.contains(&self.filter)
     }
 
     fn hotkeys(

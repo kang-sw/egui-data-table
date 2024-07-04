@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
-## 0.2.2 - 2024-05-11
+## [0.3.0] - 2024-07-04
+
+### Changed
+
+- Upgraded EGUI dependency version to 0.28
+- Remove function RPITIT in table viewer trait.
+
+## [0.2.2] - 2024-05-11
 
 ### Added 
 
