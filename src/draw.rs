@@ -73,6 +73,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
         let mut resp_total = None::<Response>;
         let mut resp_ret = None::<Response>;
         let mut commands = Vec::<Command<R>>::new();
+        let ui_layer_id = ui.layer_id();
 
         // NOTE: unlike RED and YELLOW which can be acquirable through 'error_bg_color' and
         // 'warn_bg_color', there's no 'green' color which can be acquired from inherent theme.
@@ -146,6 +147,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     if resp.dragged() {
                         egui::popup::show_tooltip_text(
                             ctx,
+                            ui_layer_id,
                             "_EGUI_DATATABLE__COLUMN_MOVE__".into(),
                             viewer.column_name(col.0),
                         );

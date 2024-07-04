@@ -8,9 +8,11 @@ name = "demo"
 path = "../examples/demo.rs"
 
 [dependencies]
-egui = "0.27"
-egui_extras = { version = "0.27", default-features = false }
-eframe = { version = "0.27", features = ["serde", "persistence"] }
+egui = "0.28"
+egui_extras = { version = "0.28", default-features = false, features = [
+    "serde",
+] }
+eframe = { version = "0.28", features = ["serde", "persistence"] }
 
 egui-data-table = { path = ".." }
 

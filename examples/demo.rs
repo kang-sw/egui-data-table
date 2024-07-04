@@ -46,7 +46,9 @@ impl RowViewer<Row> for Viewer {
         [true, true, false, true][column]
     }
 
-    fn create_cell_comparator(&mut self) -> fn(&Row, &Row, usize) -> std::cmp::Ordering {
+    fn create_cell_comparator(
+        &mut self,
+    ) -> impl for<'a, 'b> Fn(&'a Row, &'b Row, usize) -> std::cmp::Ordering {
         fn cmp(row_l: &Row, row_r: &Row, column: usize) -> std::cmp::Ordering {
             match column {
                 0 => row_l.0.cmp(&row_r.0),
@@ -269,7 +271,7 @@ impl eframe::App for DemoApp {
                     for (k, a) in &self.viewer.hotkeys {
                         egui::Button::new(format!("{a:?}"))
                             .shortcut_text(ctx.format_shortcut(k))
-                            .wrap(false)
+                            .wrap_mode(egui::TextWrapMode::Wrap)
                             .sense(Sense::hover())
                             .ui(ui);
                     }
@@ -318,7 +320,7 @@ fn main() {
             .start(
                 "egui_data_table_demo",
                 web_options,
-                Box::new(|_| Box::new(DemoApp::default())),
+                Box::new(|_| Ok(Box::new(DemoApp::default()))),
             )
             .await
             .expect("failed to start eframe");
