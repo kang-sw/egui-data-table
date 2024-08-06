@@ -317,7 +317,7 @@ fn main() {
             .start(
                 "the_canvas_id",
                 web_options,
-                Box::new(|cc| Ok(Box::new(DemoApp::default()))),
+                Box::new(|_cc| Ok(Box::new(DemoApp::default()))),
             )
             .await;
 
