@@ -43,7 +43,7 @@ pub trait RowViewer<R>: 'static {
         &()
     }
 
-    /// Create a filter for the row. Filter is applied on every table invalidation.
+    /// Filter single row. If this returns false, the row will be hidden.
     fn filter_row(&mut self, row: &R) -> bool {
         let _ = row;
         true
