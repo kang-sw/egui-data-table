@@ -281,8 +281,10 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
 
                             // TODO: Later try to parse clipboard contents and detect if
                             // it's compatible with cells being pasted.
-                            Event::Paste(content) => {
-                                // Try to parse clipboard content as CSV.
+                            Event::Paste(clipboard) => {
+                                if !clipboard.is_empty() {
+                                    s.try_update_clipboard_from_system(viewer, clipboard);
+                                }
 
                                 if i.modifiers.shift {
                                     actions.push(UiAction::PasteInsert)
@@ -690,16 +692,25 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
 
         // Handle queued commands
         for cmd in commands {
-            if matches!(cmd, Command::CcCommitEdit) {
-                // If any commit action is detected, release any remaining focus.
-                ctx.memory_mut(|x| {
-                    if let Some(fc) = x.focused() {
-                        x.surrender_focus(fc)
+            match cmd {
+                Command::CcUpdateSystemClipboard(new_content) => {
+                    ctx.output_mut(|x| {
+                        x.copied_text = new_content;
+                    });
+                }
+                cmd => {
+                    if matches!(cmd, Command::CcCommitEdit) {
+                        // If any commit action is detected, release any remaining focus.
+                        ctx.memory_mut(|x| {
+                            if let Some(fc) = x.focused() {
+                                x.surrender_focus(fc)
+                            }
+                        });
                     }
-                });
-            }
 
-            s.push_new_command(table, viewer, cmd, self.config.max_undo_history);
+                    s.push_new_command(table, viewer, cmd, self.config.max_undo_history);
+                }
+            }
         }
 
         // Total response

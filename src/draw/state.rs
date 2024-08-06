@@ -438,6 +438,27 @@ impl<R> UiState<R> {
         self.validate_interactive_cell(self.p.vis_cols.len());
     }
 
+    pub fn try_update_clipboard_from_system<V: RowViewer<R>>(
+        &mut self,
+        vwr: &mut V,
+        contents: &str,
+    ) -> bool {
+        /*
+            NOTE: System clipboard implementation
+
+            We can't just determine if the internal clipboard should be preferred over the system
+            clipboard, as the source of clipboard contents can be vary. Therefore, on every copy
+            operation, we should clear out the system clipboard unconditionally, then we tries to
+            encode the copied content into clipboard.
+
+            TODO: Need to find way to handle if both of system clipboard and internal clipboard
+            content exist. We NEED to determine if which content should be applied for this.
+        */
+
+        // TODO: Update clipboard contents from system.
+        false
+    }
+
     fn handle_desired_selection(&mut self) -> bool {
         let Some((next_sel, sel)) = self.cc_desired_selection.take().and_then(|x| {
             if let CursorState::Select(vec) = &mut self.cc_cursor {
@@ -762,6 +783,10 @@ impl<R> UiState<R> {
                     })
                     .collect()
             }
+            Command::CcUpdateSystemClipboard(..) => {
+                // This command MUST've be consumed before calling this.
+                unreachable!()
+            }
         };
 
         // Discard all redos after this point.
@@ -838,14 +863,15 @@ impl<R> UiState<R> {
 
                 self.queue_select_rows([]);
             }
-            Command::CcHideColumn(_)
+            Command::CcHideColumn(..)
             | Command::CcShowColumn { .. }
             | Command::CcReorderColumn { .. }
             | Command::CcEditStart(..)
             | Command::CcCommitEdit
             | Command::CcCancelEdit
-            | Command::CcSetSelection(_)
-            | Command::CcSetCells { .. } => unreachable!(),
+            | Command::CcSetSelection(..)
+            | Command::CcSetCells { .. }
+            | Command::CcUpdateSystemClipboard(..) => unreachable!(),
         }
     }
 
@@ -1025,14 +1051,25 @@ impl<R> UiState<R> {
                         .collect(),
                 });
 
-                // TODO: Interact with system clipboard?
-                // - Then we need a way to serialize contents to string.
+                let sys_clip = vwr.try_create_codec(true).map(|codec| {
+                    // TODO: Implement clipboard interaction.
+
+                    // TODO: call `UpdateSystemClipboard` command with generated
+
+                    String::new()
+                });
 
                 if action == UiAction::CutSelection {
                     self.try_apply_ui_action(table, vwr, UiAction::DeleteSelection)
                 } else {
                     vec![]
                 }
+                .tap_mut(|v| {
+                    // We only overwrite system clipboard when codec support is active.
+                    if let Some(clip) = sys_clip {
+                        v.push(Command::CcUpdateSystemClipboard(clip));
+                    }
+                })
             }
             UiAction::SelectionDuplicateValues => {
                 let pivot_row = vwr.clone_row_as_copied_base(&table.rows[self.cc_rows[ic_r.0].0]);
@@ -1297,6 +1334,8 @@ impl<R> UiState<R> {
 
 /* ------------------------------------------ Commands ------------------------------------------ */
 
+/// NOTE: `Cc` prefix stands for cache command which won't be stored in undo/redo queue, since they
+/// are not called from `cmd_apply` method.
 pub(crate) enum Command<R> {
     CcHideColumn(ColumnIdx),
     CcShowColumn {
@@ -1330,4 +1369,6 @@ pub(crate) enum Command<R> {
     CcEditStart(RowIdx, VisColumnPos, Box<R>),
     CcCancelEdit,
     CcCommitEdit,
+
+    CcUpdateSystemClipboard(String),
 }
