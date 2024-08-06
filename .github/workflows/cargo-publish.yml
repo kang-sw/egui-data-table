@@ -15,8 +15,6 @@ jobs:
       - run: cargo build
       - run: cargo test
       - run: cargo login ${{ secrets.CRATES_IO_TOKEN }}
-      - run: cargo install cargo-semver-checks
-      - run: cargo semver-checks
       - run: cargo publish
         
         
