@@ -5,7 +5,7 @@ edition = "2021"
 repository = "https://github.com/kang-sw/egui-data-table"
 authors = ["kang-sw"]
 description = "A generic data table widget implmentation for egui"
-categories = ["egui", "ui", "spreadsheet", "data-table"]
+categories = ["gui"]
 license-file = "LICENSE"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
