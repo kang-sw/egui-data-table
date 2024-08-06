@@ -46,18 +46,14 @@ impl RowViewer<Row> for Viewer {
         [true, true, false, true][column]
     }
 
-    fn create_cell_comparator(&mut self) -> fn(&Row, &Row, usize) -> std::cmp::Ordering {
-        fn cmp(row_l: &Row, row_r: &Row, column: usize) -> std::cmp::Ordering {
-            match column {
-                0 => row_l.0.cmp(&row_r.0),
-                1 => row_l.1.cmp(&row_r.1),
-                2 => unreachable!(),
-                3 => row_l.3.cmp(&row_r.3),
-                _ => unreachable!(),
-            }
+    fn compare_cell(&self, row_l: &Row, row_r: &Row, column: usize) -> std::cmp::Ordering {
+        match column {
+            0 => row_l.0.cmp(&row_r.0),
+            1 => row_l.1.cmp(&row_r.1),
+            2 => unreachable!(),
+            3 => row_l.3.cmp(&row_r.3),
+            _ => unreachable!(),
         }
-
-        cmp
     }
 
     fn new_empty_row(&mut self) -> Row {
@@ -157,8 +153,8 @@ impl RowViewer<Row> for Viewer {
         &self.filter
     }
 
-    fn create_row_filter(&mut self) -> impl Fn(&Row) -> bool {
-        |r| r.0.contains(&self.filter)
+    fn filter_row(&mut self, row: &Row) -> bool {
+        row.0.contains(&self.filter)
     }
 
     fn hotkeys(
@@ -269,7 +265,7 @@ impl eframe::App for DemoApp {
                     for (k, a) in &self.viewer.hotkeys {
                         egui::Button::new(format!("{a:?}"))
                             .shortcut_text(ctx.format_shortcut(k))
-                            .wrap(false)
+                            .wrap_mode(egui::TextWrapMode::Wrap)
                             .sense(Sense::hover())
                             .ui(ui);
                     }
@@ -311,16 +307,36 @@ fn main() {
 
 #[cfg(target_arch = "wasm32")]
 fn main() {
+    // Redirect `log` message to `console.log` and friends:
+    eframe::WebLogger::init(log::LevelFilter::Debug).ok();
+
     let web_options = eframe::WebOptions::default();
 
     wasm_bindgen_futures::spawn_local(async {
-        eframe::WebRunner::new()
+        let start_result = eframe::WebRunner::new()
             .start(
-                "egui_data_table_demo",
+                "the_canvas_id",
                 web_options,
-                Box::new(|_| Box::new(DemoApp::default())),
+                Box::new(|cc| Ok(Box::new(DemoApp::default()))),
             )
-            .await
-            .expect("failed to start eframe");
+            .await;
+
+        // Remove the loading text and spinner:
+        let loading_text = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| d.get_element_by_id("loading_text"));
+        if let Some(loading_text) = loading_text {
+            match start_result {
+                Ok(_) => {
+                    loading_text.remove();
+                }
+                Err(e) => {
+                    loading_text.set_inner_html(
+                        "<p> The app has crashed. See the developer console for details. </p>",
+                    );
+                    panic!("Failed to start eframe: {e:?}");
+                }
+            }
+        }
     });
 }

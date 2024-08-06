@@ -1,4 +1,7 @@
 /target
 /demo/dist
 
+.cargo
+
 .vscode/launch.json
+Cargo.lock

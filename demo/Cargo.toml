@@ -8,9 +8,11 @@ name = "demo"
 path = "../examples/demo.rs"
 
 [dependencies]
-egui = "0.27"
-egui_extras = { version = "0.27", default-features = false }
-eframe = { version = "0.27", features = ["serde", "persistence"] }
+egui = "0.28"
+egui_extras = { version = "0.28", default-features = false, features = [
+    "serde",
+] }
+eframe = { version = "0.28", features = ["serde", "persistence"] }
 
 egui-data-table = { path = ".." }
 
@@ -19,6 +21,8 @@ names = { version = "0.14", default-features = false }
 getrandom = { version = "0.2", features = ["js"] }
 
 tap = "1"
+log = "0.4"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = "0.4"
+web-sys = "0.3"

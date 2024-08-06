@@ -33,8 +33,9 @@ pub trait RowViewer<R>: 'static {
     }
 
     /// Compare two column contents for sort.
-    fn create_cell_comparator(&mut self) -> impl Fn(&R, &R, usize) -> std::cmp::Ordering {
-        |_, _, _| std::cmp::Ordering::Equal
+    fn compare_cell(&self, row_a: &R, row_b: &R, column: usize) -> std::cmp::Ordering {
+        let _ = (row_a, row_b, column);
+        std::cmp::Ordering::Equal
     }
 
     /// Get hash value of a filter. This is used to determine if the filter has changed.
@@ -42,9 +43,10 @@ pub trait RowViewer<R>: 'static {
         &()
     }
 
-    /// Create a filter for the row. Filter is applied on every table invalidation.
-    fn create_row_filter(&mut self) -> impl Fn(&R) -> bool {
-        |_| true
+    /// Filter single row. If this returns false, the row will be hidden.
+    fn filter_row(&mut self, row: &R) -> bool {
+        let _ = row;
+        true
     }
 
     /// Display values of the cell. Any input will be consumed before table renderer;

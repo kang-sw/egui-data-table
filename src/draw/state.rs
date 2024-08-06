@@ -374,23 +374,22 @@ impl<R> UiState<R> {
         // - Maybe we need specialization for `R: Send`?
 
         // We should validate the entire cache.
-        let filter = vwr.create_row_filter();
         self.cc_rows.clear();
         self.cc_rows.extend(
             rows.iter()
                 .enumerate()
-                .filter_map(move |(i, x)| filter(x).then_some(i))
+                .filter_map(|(i, x)| vwr.filter_row(x).then_some(i))
                 .map(RowIdx),
         );
 
-        let comparator = vwr.create_cell_comparator();
         for (sort_col, asc) in self.p.sort.iter().rev() {
             self.cc_rows.sort_by(|a, b| {
-                comparator(&rows[a.0], &rows[b.0], sort_col.0).tap_mut(|x| {
-                    if !asc.0 {
-                        *x = x.reverse()
-                    }
-                })
+                vwr.compare_cell(&rows[a.0], &rows[b.0], sort_col.0)
+                    .tap_mut(|x| {
+                        if !asc.0 {
+                            *x = x.reverse()
+                        }
+                    })
             });
         }
 
@@ -1063,7 +1062,7 @@ impl<R> UiState<R> {
                 let desired = self.cc_desired_selection.get_or_insert(default());
                 desired.clear();
 
-                for (row, group) in &values.iter().group_by(|(row, ..)| *row) {
+                for (row, group) in &values.iter().chunk_by(|(row, ..)| *row) {
                     desired.push((row, group.map(|(_, c, ..)| *c).collect()))
                 }
 
