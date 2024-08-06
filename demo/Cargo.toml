@@ -21,6 +21,8 @@ names = { version = "0.14", default-features = false }
 getrandom = { version = "0.2", features = ["js"] }
 
 tap = "1"
+log = "0.4"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = "0.4"
+web-sys = "0.3"
