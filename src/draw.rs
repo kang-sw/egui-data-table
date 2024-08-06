@@ -281,7 +281,9 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
 
                             // TODO: Later try to parse clipboard contents and detect if
                             // it's compatible with cells being pasted.
-                            Event::Paste(_) => {
+                            Event::Paste(content) => {
+                                // Try to parse clipboard content as CSV.
+
                                 if i.modifiers.shift {
                                     actions.push(UiAction::PasteInsert)
                                 } else {
