@@ -150,6 +150,8 @@ pub(crate) struct UiState<R> {
     undo_cursor: usize,
 
     /// Clipboard contents.
+    ///
+    /// XXX: Should we move this into global storage?
     clipboard: Option<Clipboard<R>>,
 
     /// Persistent data
@@ -438,7 +440,7 @@ impl<R> UiState<R> {
         self.validate_interactive_cell(self.p.vis_cols.len());
     }
 
-    pub fn try_update_clipboard_from_system<V: RowViewer<R>>(
+    pub fn try_update_clipboard_from_string<V: RowViewer<R>>(
         &mut self,
         vwr: &mut V,
         contents: &str,
@@ -453,10 +455,43 @@ impl<R> UiState<R> {
 
             TODO: Need to find way to handle if both of system clipboard and internal clipboard
             content exist. We NEED to determine if which content should be applied for this.
+
+            # Dumping
+
+            - For rectangular(including single cell) selection of data, we'll just create
+              appropriate sized small TSV data which suits within given range.
+                - Note that this'll differentiate the clipboard behavior from internal-only
+                  version.
+            - For non-rectangular selections, full-scale rectangular table is dumped which
+              can cover all selection range including empty selections; where any data that
+              is not being dumped is just emptied out.
+                - From this, any data cell that is just 'empty' but selected, should be dumped
+                  as explicit empty data; in this case, empty data wrapped with double
+                  quotes("").
+
+            # Decoding
+
+            - Every format is regarded as TSV. (only \t, \n matters)
+            - For TSV data with same column count with this table
+                - Parse as full-scale table, then put into clipboard as-is.
+            - Column count is less than current table
+                - In this case, current selection matters.
+                - Offset the copied content table as the selection column offset.
+                - Then create clipboard data from it.
+            - If column count is larger than this, it is invalid data; we just skip parsing
         */
+        if let Some(codec) = vwr.try_create_codec(false) {}
 
         // TODO: Update clipboard contents from system.
         false
+    }
+
+    fn try_dump_clipboard_content<V: RowViewer<R>>(
+        table: &mut DataTable<R>,
+        vwr: &mut V,
+        clip: &Clipboard<R>,
+    ) -> Option<String> {
+        todo!()
     }
 
     fn handle_desired_selection(&mut self) -> bool {
@@ -1037,7 +1072,7 @@ impl<R> UiState<R> {
                     slab.push(vwr.clone_row_as_copied_base(&table.rows[self.cc_rows[vis_row.0].0]));
                 }
 
-                self.clipboard = Some(Clipboard {
+                let clipboard = Clipboard {
                     slab: slab.into_boxed_slice(),
                     pastes: sels
                         .iter()
@@ -1049,15 +1084,10 @@ impl<R> UiState<R> {
                             )
                         })
                         .collect(),
-                });
+                };
 
-                let sys_clip = vwr.try_create_codec(true).map(|codec| {
-                    // TODO: Implement clipboard interaction.
-
-                    // TODO: call `UpdateSystemClipboard` command with generated
-
-                    String::new()
-                });
+                let sys_clip = Self::try_dump_clipboard_content(table, vwr, &clipboard);
+                self.clipboard = Some(clipboard);
 
                 if action == UiAction::CutSelection {
                     self.try_apply_ui_action(table, vwr, UiAction::DeleteSelection)

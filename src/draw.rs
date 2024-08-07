@@ -16,6 +16,7 @@ use self::state::*;
 use format as f;
 
 pub(crate) mod state;
+mod tsv;
 
 /* ------------------------------------------ Rendering ----------------------------------------- */
 
@@ -279,11 +280,14 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                             Event::Copy => actions.push(UiAction::CopySelection),
                             Event::Cut => actions.push(UiAction::CutSelection),
 
-                            // TODO: Later try to parse clipboard contents and detect if
-                            // it's compatible with cells being pasted.
+                            // Try to parse clipboard contents and detect if it's compatible
+                            // with cells being pasted.
                             Event::Paste(clipboard) => {
                                 if !clipboard.is_empty() {
-                                    s.try_update_clipboard_from_system(viewer, clipboard);
+                                    // If system clipboard is not empty, try to update the internal
+                                    // clipboard with system clipboard content before applying
+                                    // paste operation.
+                                    s.try_update_clipboard_from_string(viewer, clipboard);
                                 }
 
                                 if i.modifiers.shift {
