@@ -7,17 +7,17 @@ use tap::prelude::Pipe;
 /// A trait for encoding/decoding row data. Any valid UTF-8 string can be used for encoding,
 /// however, as csv is used for clipboard operations, it is recommended to serialize data in simple
 /// string format as possible.
-pub trait RowCodec<'vwr, R> {
+pub trait RowCodec<R> {
     type DeserializeError;
 
     /// Tries encode column data of given row into a string. As the cell for CSV row is already
     /// occupied, if any error or unsupported data is found for that column, just empty out the
     /// destination string buffer.
-    fn encode_column(&self, src_row: &R, column: usize, dst: &mut String);
+    fn encode_column(&mut self, src_row: &R, column: usize, dst: &mut String);
 
     /// Tries decode column data from a string into a row.
     fn decode_column(
-        &self,
+        &mut self,
         src_data: &str,
         column: usize,
         dst_row: &mut R,
@@ -25,16 +25,16 @@ pub trait RowCodec<'vwr, R> {
 }
 
 /// A placeholder codec for row viewers that not require serialization.
-impl<'vwr, R> RowCodec<'vwr, R> for () {
+impl<R> RowCodec<R> for () {
     type DeserializeError = ();
 
-    fn encode_column(&self, src_row: &R, column: usize, dst: &mut String) {
+    fn encode_column(&mut self, src_row: &R, column: usize, dst: &mut String) {
         let _ = (src_row, column, dst);
         unimplemented!()
     }
 
     fn decode_column(
-        &self,
+        &mut self,
         src_data: &str,
         column: usize,
         dst_row: &mut R,
@@ -66,10 +66,9 @@ pub trait RowViewer<R>: 'static {
     /// `is_encoding` parameter is provided to determine if we're creating the codec as encoding
     /// mode or decoding mode.
     ///
-    /// NOTE: Encoder and decoder traits are intentionally not separated to clarify that to qualify
-    /// system clipboard/string serialization support, both features should be implemented. For any
-    /// required optimization, use `is_encoding` flag to create different variant for different
-    /// mode. It is guaranteed that the codec will be used only for one mode at a time.
+    /// It is just okay to choose not to implement both encoding and decoding; returning `None`
+    /// conditionally based on `is_encoding` parameter is also valid. It is guaranteed that created
+    /// codec will be used only for the same mode during its lifetime.
     fn try_create_codec(&mut self, is_encoding: bool) -> Option<impl RowCodec<R>> {
         let _ = is_encoding;
         None::<()>

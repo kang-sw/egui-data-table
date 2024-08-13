@@ -13,8 +13,10 @@ use tap::prelude::{Pipe, Tap};
 
 use crate::{
     default,
+    draw::tsv,
     viewer::{
-        CellWriteContext, EmptyRowCreateContext, MoveDirection, UiActionContext, UiCursorState,
+        CellWriteContext, EmptyRowCreateContext, MoveDirection, RowCodec, UiActionContext,
+        UiCursorState,
     },
     DataTable, RowViewer, UiAction,
 };
@@ -234,6 +236,15 @@ struct Clipboard<R> {
     /// The first tuple element `VisRowPos` is offset from the top-left corner of the
     /// selection.
     pastes: Box<[(VisRowOffset, ColumnIdx, RowSlabIndex)]>,
+}
+
+impl<R> Clipboard<R> {
+    pub fn sort(&mut self) {
+        self.pastes
+            .sort_by(|(a_row, a_col, ..), (b_row, b_col, ..)| {
+                a_row.0.cmp(&b_row.0).then(a_col.0.cmp(&b_col.0))
+            })
+    }
 }
 
 struct UndoArg<R> {
@@ -480,18 +491,57 @@ impl<R> UiState<R> {
                 - Then create clipboard data from it.
             - If column count is larger than this, it is invalid data; we just skip parsing
         */
-        if let Some(codec) = vwr.try_create_codec(false) {}
 
         // TODO: Update clipboard contents from system.
+
+        // If any cell is failed to be parsed, we'll just give up all parsing then use internal
+        // clipboard instead.
         false
     }
 
     fn try_dump_clipboard_content<V: RowViewer<R>>(
-        table: &mut DataTable<R>,
+        clipboard: &Clipboard<R>,
         vwr: &mut V,
-        clip: &Clipboard<R>,
     ) -> Option<String> {
-        todo!()
+        // clipboard MUST be sorted before dumping.
+        #[allow(unused_mut)]
+        let mut codec = vwr.try_create_codec(true)?;
+
+        let mut width = 0;
+        let mut height = 0;
+
+        for (row, column, ..) in clipboard.pastes.iter() {
+            width = width.max(column.0 + 1);
+            height = height.max(row.0 + 1);
+        }
+
+        let mut buf_out = String::new();
+        let mut buf_tmp = String::new();
+        let mut row_cursor = 0;
+
+        for (row, columns, ..) in &clipboard.pastes.iter().chunk_by(|(row, ..)| *row) {
+            while row_cursor < row.0 {
+                tsv::write_newline(&mut buf_out);
+                row_cursor += 1;
+            }
+
+            let mut column_cursor = 0;
+
+            for (_, column, data_idx) in columns.into_iter() {
+                while column_cursor < column.0 {
+                    tsv::write_tab(&mut buf_out);
+                    column_cursor += 1;
+                }
+
+                let data = &clipboard.slab[data_idx.0];
+                codec.encode_column(data, column.0, &mut buf_tmp);
+
+                tsv::write_content(&mut buf_out, &buf_tmp);
+                buf_tmp.clear();
+            }
+        }
+
+        Some(buf_out)
     }
 
     fn handle_desired_selection(&mut self) -> bool {
@@ -1084,9 +1134,10 @@ impl<R> UiState<R> {
                             )
                         })
                         .collect(),
-                };
+                }
+                .tap_mut(Clipboard::sort);
 
-                let sys_clip = Self::try_dump_clipboard_content(table, vwr, &clipboard);
+                let sys_clip = Self::try_dump_clipboard_content(&clipboard, vwr);
                 self.clipboard = Some(clipboard);
 
                 if action == UiAction::CutSelection {
