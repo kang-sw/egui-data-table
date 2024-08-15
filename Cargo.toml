@@ -20,6 +20,7 @@ egui_extras = { version = "0.28", default-features = false, features = [
 tap = "1"
 itertools = "0.13"
 serde = { version = "1", optional = true, features = ["derive"] }
+thiserror = "1"
 
 [dev-dependencies]
 eframe = { version = "0.28", features = ["serde", "persistence"] }

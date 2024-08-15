@@ -492,7 +492,14 @@ impl<R> UiState<R> {
             - If column count is larger than this, it is invalid data; we just skip parsing
         */
 
+        let Some(codec) = vwr.try_create_codec(false) else {
+            // Even when there is system clipboard content, we're going to ignore it and use
+            // internal clipboard if there's no way to parse it.
+            return false;
+        };
+
         // TODO: Update clipboard contents from system.
+        let view = tsv::ParsedTsv::parse(contents);
 
         // If any cell is failed to be parsed, we'll just give up all parsing then use internal
         // clipboard instead.
@@ -503,7 +510,7 @@ impl<R> UiState<R> {
         clipboard: &Clipboard<R>,
         vwr: &mut V,
     ) -> Option<String> {
-        // clipboard MUST be sorted before dumping.
+        // clipboard MUST be sorted before dumping; XXX: add assertion?
         #[allow(unused_mut)]
         let mut codec = vwr.try_create_codec(true)?;
 
