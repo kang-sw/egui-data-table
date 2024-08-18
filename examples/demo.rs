@@ -80,7 +80,7 @@ impl RowCodec<Row> for Codec {
 /* ------------------------------------ Viewer Implementation ----------------------------------- */
 
 impl RowViewer<Row> for Viewer {
-    fn try_create_codec(&mut self, is_encoding: bool) -> Option<impl RowCodec<Row>> {
+    fn try_create_codec(&mut self, _: bool) -> Option<impl RowCodec<Row>> {
         Some(Codec)
     }
 

@@ -1,3 +1,4 @@
+#![allow(unused)]
 //! A short implementation for reading and writing TSV data.
 
 use std::ops::Range;

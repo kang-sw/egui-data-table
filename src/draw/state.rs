@@ -1,5 +1,4 @@
 use std::{
-    cmp::Ordering,
     collections::{BTreeMap, BTreeSet, VecDeque},
     hash::{Hash, Hasher},
     mem::{replace, take},
