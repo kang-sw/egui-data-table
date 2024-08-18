@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## [0.3.1] - 2024-08-18
+
+### Added
+
+- System clipboard support
+- New trait item: `Codec`
+
 ## [0.3.0] - 2024-07-04
 
 ### Changed

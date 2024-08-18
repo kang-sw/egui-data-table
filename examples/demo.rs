@@ -2,7 +2,7 @@ use std::{borrow::Cow, iter::repeat_with};
 
 use egui::{Response, Sense, Widget};
 use egui_data_table::{
-    viewer::{default_hotkeys, CellWriteContext, UiActionContext},
+    viewer::{default_hotkeys, CellWriteContext, DecodeErrorBehavior, RowCodec, UiActionContext},
     RowViewer,
 };
 
@@ -25,9 +25,65 @@ enum Grade {
     F,
 }
 
+/* -------------------------------------------- Codec ------------------------------------------- */
+
+struct Codec;
+
+impl RowCodec<Row> for Codec {
+    type DeserializeError = &'static str;
+
+    fn encode_column(&mut self, src_row: &Row, column: usize, dst: &mut String) {
+        match column {
+            0 => dst.push_str(&src_row.0),
+            1 => dst.push_str(&src_row.1.to_string()),
+            2 => dst.push_str(&src_row.2.to_string()),
+            3 => dst.push_str(match src_row.3 {
+                Grade::A => "A",
+                Grade::B => "B",
+                Grade::C => "C",
+                Grade::F => "F",
+            }),
+            _ => unreachable!(),
+        }
+    }
+
+    fn decode_column(
+        &mut self,
+        src_data: &str,
+        column: usize,
+        dst_row: &mut Row,
+    ) -> Result<(), DecodeErrorBehavior> {
+        match column {
+            0 => dst_row.0.replace_range(.., src_data),
+            1 => dst_row.1 = src_data.parse().map_err(|_| DecodeErrorBehavior::SkipRow)?,
+            2 => dst_row.2 = src_data.parse().map_err(|_| DecodeErrorBehavior::SkipRow)?,
+            3 => {
+                dst_row.3 = match src_data {
+                    "A" => Grade::A,
+                    "B" => Grade::B,
+                    "C" => Grade::C,
+                    "F" => Grade::F,
+                    _ => return Err(DecodeErrorBehavior::SkipRow),
+                }
+            }
+            _ => unreachable!(),
+        }
+
+        Ok(())
+    }
+
+    fn create_empty_decoded_row(&mut self) -> Row {
+        Row("".to_string(), 0, false, Grade::F)
+    }
+}
+
 /* ------------------------------------ Viewer Implementation ----------------------------------- */
 
 impl RowViewer<Row> for Viewer {
+    fn try_create_codec(&mut self, _: bool) -> Option<impl RowCodec<Row>> {
+        Some(Codec)
+    }
+
     fn num_columns(&mut self) -> usize {
         4
     }

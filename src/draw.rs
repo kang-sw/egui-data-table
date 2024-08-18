@@ -16,6 +16,7 @@ use self::state::*;
 use format as f;
 
 pub(crate) mod state;
+mod tsv;
 
 /* ------------------------------------------ Rendering ----------------------------------------- */
 
@@ -279,9 +280,16 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                             Event::Copy => actions.push(UiAction::CopySelection),
                             Event::Cut => actions.push(UiAction::CutSelection),
 
-                            // TODO: Later try to parse clipboard contents and detect if
-                            // it's compatible with cells being pasted.
-                            Event::Paste(_) => {
+                            // Try to parse clipboard contents and detect if it's compatible
+                            // with cells being pasted.
+                            Event::Paste(clipboard) => {
+                                if !clipboard.is_empty() {
+                                    // If system clipboard is not empty, try to update the internal
+                                    // clipboard with system clipboard content before applying
+                                    // paste operation.
+                                    s.try_update_clipboard_from_string(viewer, clipboard);
+                                }
+
                                 if i.modifiers.shift {
                                     actions.push(UiAction::PasteInsert)
                                 } else {
@@ -688,16 +696,25 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
 
         // Handle queued commands
         for cmd in commands {
-            if matches!(cmd, Command::CcCommitEdit) {
-                // If any commit action is detected, release any remaining focus.
-                ctx.memory_mut(|x| {
-                    if let Some(fc) = x.focused() {
-                        x.surrender_focus(fc)
+            match cmd {
+                Command::CcUpdateSystemClipboard(new_content) => {
+                    ctx.output_mut(|x| {
+                        x.copied_text = new_content;
+                    });
+                }
+                cmd => {
+                    if matches!(cmd, Command::CcCommitEdit) {
+                        // If any commit action is detected, release any remaining focus.
+                        ctx.memory_mut(|x| {
+                            if let Some(fc) = x.focused() {
+                                x.surrender_focus(fc)
+                            }
+                        });
                     }
-                });
-            }
 
-            s.push_new_command(table, viewer, cmd, self.config.max_undo_history);
+                    s.push_new_command(table, viewer, cmd, self.config.max_undo_history);
+                }
+            }
         }
 
         // Total response

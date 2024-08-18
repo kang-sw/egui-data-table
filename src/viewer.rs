@@ -4,6 +4,66 @@ use egui::{Key, KeyboardShortcut, Modifiers};
 pub use egui_extras::Column as TableColumnConfig;
 use tap::prelude::Pipe;
 
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DecodeErrorBehavior {
+    /// Skip the cell and continue decoding.
+    SkipCell,
+
+    /// Skip the whole row
+    SkipRow,
+
+    /// Stop decoding and return error.
+    #[default]
+    Abort,
+}
+
+/// A trait for encoding/decoding row data. Any valid UTF-8 string can be used for encoding,
+/// however, as csv is used for clipboard operations, it is recommended to serialize data in simple
+/// string format as possible.
+pub trait RowCodec<R> {
+    type DeserializeError;
+
+    /// Creates a new empty row for decoding
+    fn create_empty_decoded_row(&mut self) -> R;
+
+    /// Tries encode column data of given row into a string. As the cell for CSV row is already
+    /// occupied, if any error or unsupported data is found for that column, just empty out the
+    /// destination string buffer.
+    fn encode_column(&mut self, src_row: &R, column: usize, dst: &mut String);
+
+    /// Tries decode column data from a string into a row.
+    fn decode_column(
+        &mut self,
+        src_data: &str,
+        column: usize,
+        dst_row: &mut R,
+    ) -> Result<(), DecodeErrorBehavior>;
+}
+
+/// A placeholder codec for row viewers that not require serialization.
+impl<R> RowCodec<R> for () {
+    type DeserializeError = ();
+
+    fn create_empty_decoded_row(&mut self) -> R {
+        unimplemented!()
+    }
+
+    fn encode_column(&mut self, src_row: &R, column: usize, dst: &mut String) {
+        let _ = (src_row, column, dst);
+        unimplemented!()
+    }
+
+    fn decode_column(
+        &mut self,
+        src_data: &str,
+        column: usize,
+        dst_row: &mut R,
+    ) -> Result<(), DecodeErrorBehavior> {
+        let _ = (src_data, column, dst_row);
+        unimplemented!()
+    }
+}
+
 /// The primary trait for the spreadsheet viewer.
 // TODO: When lifetime for `'static` is stabilized; remove the `static` bound.
 pub trait RowViewer<R>: 'static {
@@ -18,6 +78,20 @@ pub trait RowViewer<R>: 'static {
             &" 0 1 2 3 4 5 6 7 8 91011121314151617181920212223242526272829303132"
                 [(column % 10 * 2).pipe(|x| x..x + 2)],
         )
+    }
+
+    /// Tries to create a codec for the row (de)serialization. If this returns `Some`, it'll use
+    /// the system clipboard for copy/paste operations.
+    ///
+    /// `is_encoding` parameter is provided to determine if we're creating the codec as encoding
+    /// mode or decoding mode.
+    ///
+    /// It is just okay to choose not to implement both encoding and decoding; returning `None`
+    /// conditionally based on `is_encoding` parameter is also valid. It is guaranteed that created
+    /// codec will be used only for the same mode during its lifetime.
+    fn try_create_codec(&mut self, is_encoding: bool) -> Option<impl RowCodec<R>> {
+        let _ = is_encoding;
+        None::<()>
     }
 
     /// Returns the rendering configuration for the column.
@@ -229,6 +303,7 @@ pub enum UiAction {
     MoveSelection(MoveDirection),
     CopySelection,
     CutSelection,
+
     PasteInPlace,
     PasteInsert,
 
