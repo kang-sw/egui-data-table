@@ -123,6 +123,15 @@ impl ParsedTsv {
         s
     }
 
+    /// Calculate the width of the table. This is the longest row in the table.
+    pub fn calc_table_width(&self) -> usize {
+        self.row_offsets
+            .windows(2)
+            .map(|range| range[1] - range[0])
+            .max()
+            .unwrap_or(0) as usize
+    }
+
     pub fn num_columns_at(&self, row: usize) -> usize {
         if row >= self.row_offsets.len() - 1 {
             return 0;
@@ -146,22 +155,28 @@ impl ParsedTsv {
     }
 
     // TODO: Iterator function which returns (row, column, cell data) tuple.
-
-    pub fn iter_index_data(&self) -> impl Iterator<Item = (usize, usize, &str)> {
+    pub fn iter_rows(&self) -> impl Iterator<Item = (usize, impl Iterator<Item = (usize, &str)>)> {
         self.row_offsets
             .windows(2)
             .enumerate()
-            .flat_map(move |(row, range)| {
+            .map(move |(row, range)| {
                 let (start, end) = (range[0] as usize, range[1] as usize);
-                (start..end).map(move |cell_offset| {
+                let row_iter = (start..end).map(move |cell_offset| {
                     let cell_span = self.cell_spans.get(cell_offset).unwrap();
                     (
-                        row,
                         cell_offset - start,
                         &self.data[cell_span.start as usize..cell_span.end as usize],
                     )
-                })
+                });
+
+                (row, row_iter)
             })
+    }
+
+    #[cfg(test)]
+    fn iter_index_data(&self) -> impl Iterator<Item = (usize, usize, &str)> {
+        self.iter_rows()
+            .flat_map(|(row, row_iter)| row_iter.map(move |(col, data)| (row, col, data)))
     }
 }
 

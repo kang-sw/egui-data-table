@@ -4,11 +4,27 @@ use egui::{Key, KeyboardShortcut, Modifiers};
 pub use egui_extras::Column as TableColumnConfig;
 use tap::prelude::Pipe;
 
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DecodeErrorBehavior {
+    /// Skip the cell and continue decoding.
+    SkipCell,
+
+    /// Skip the whole row
+    SkipRow,
+
+    /// Stop decoding and return error.
+    #[default]
+    Abort,
+}
+
 /// A trait for encoding/decoding row data. Any valid UTF-8 string can be used for encoding,
 /// however, as csv is used for clipboard operations, it is recommended to serialize data in simple
 /// string format as possible.
 pub trait RowCodec<R> {
     type DeserializeError;
+
+    /// Creates a new empty row for decoding
+    fn create_empty_decoded_row(&mut self) -> R;
 
     /// Tries encode column data of given row into a string. As the cell for CSV row is already
     /// occupied, if any error or unsupported data is found for that column, just empty out the
@@ -21,12 +37,16 @@ pub trait RowCodec<R> {
         src_data: &str,
         column: usize,
         dst_row: &mut R,
-    ) -> Result<(), Self::DeserializeError>;
+    ) -> Result<(), DecodeErrorBehavior>;
 }
 
 /// A placeholder codec for row viewers that not require serialization.
 impl<R> RowCodec<R> for () {
     type DeserializeError = ();
+
+    fn create_empty_decoded_row(&mut self) -> R {
+        unimplemented!()
+    }
 
     fn encode_column(&mut self, src_row: &R, column: usize, dst: &mut String) {
         let _ = (src_row, column, dst);
@@ -38,7 +58,7 @@ impl<R> RowCodec<R> for () {
         src_data: &str,
         column: usize,
         dst_row: &mut R,
-    ) -> Result<(), Self::DeserializeError> {
+    ) -> Result<(), DecodeErrorBehavior> {
         let _ = (src_data, column, dst_row);
         unimplemented!()
     }

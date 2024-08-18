@@ -2,7 +2,7 @@ use std::{borrow::Cow, iter::repeat_with};
 
 use egui::{Response, Sense, Widget};
 use egui_data_table::{
-    viewer::{default_hotkeys, CellWriteContext, RowCodec, UiActionContext},
+    viewer::{default_hotkeys, CellWriteContext, DecodeErrorBehavior, RowCodec, UiActionContext},
     RowViewer,
 };
 
@@ -52,8 +52,28 @@ impl RowCodec<Row> for Codec {
         src_data: &str,
         column: usize,
         dst_row: &mut Row,
-    ) -> Result<(), Self::DeserializeError> {
-        unimplemented!()
+    ) -> Result<(), DecodeErrorBehavior> {
+        match column {
+            0 => dst_row.0.replace_range(.., src_data),
+            1 => dst_row.1 = src_data.parse().map_err(|_| DecodeErrorBehavior::SkipRow)?,
+            2 => dst_row.2 = src_data.parse().map_err(|_| DecodeErrorBehavior::SkipRow)?,
+            3 => {
+                dst_row.3 = match src_data {
+                    "A" => Grade::A,
+                    "B" => Grade::B,
+                    "C" => Grade::C,
+                    "F" => Grade::F,
+                    _ => return Err(DecodeErrorBehavior::SkipRow),
+                }
+            }
+            _ => unreachable!(),
+        }
+
+        Ok(())
+    }
+
+    fn create_empty_decoded_row(&mut self) -> Row {
+        Row("".to_string(), 0, false, Grade::F)
     }
 }
 
@@ -61,11 +81,7 @@ impl RowCodec<Row> for Codec {
 
 impl RowViewer<Row> for Viewer {
     fn try_create_codec(&mut self, is_encoding: bool) -> Option<impl RowCodec<Row>> {
-        if is_encoding {
-            Some(Codec)
-        } else {
-            None
-        }
+        Some(Codec)
     }
 
     fn num_columns(&mut self) -> usize {

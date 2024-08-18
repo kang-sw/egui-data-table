@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     collections::{BTreeMap, BTreeSet, VecDeque},
     hash::{Hash, Hasher},
     mem::{replace, take},
@@ -15,8 +16,8 @@ use crate::{
     default,
     draw::tsv,
     viewer::{
-        CellWriteContext, EmptyRowCreateContext, MoveDirection, RowCodec, UiActionContext,
-        UiCursorState,
+        CellWriteContext, DecodeErrorBehavior, EmptyRowCreateContext, MoveDirection, RowCodec,
+        UiActionContext, UiCursorState,
     },
     DataTable, RowViewer, UiAction,
 };
@@ -492,18 +493,93 @@ impl<R> UiState<R> {
             - If column count is larger than this, it is invalid data; we just skip parsing
         */
 
-        let Some(codec) = vwr.try_create_codec(false) else {
+        let Some(mut codec) = vwr.try_create_codec(false) else {
             // Even when there is system clipboard content, we're going to ignore it and use
             // internal clipboard if there's no way to parse it.
             return false;
         };
 
-        // TODO: Update clipboard contents from system.
+        if let CursorState::Select(selections) = &self.cc_cursor {
+            let Some(first) = selections.first().map(|x| x.0) else {
+                // No selectgion present. Do nothing
+                return false;
+            };
+
+            let (.., col) = first.row_col(self.p.vis_cols.len());
+            col
+        } else {
+            // If there's no selection, we'll just ignore the system clipboard input
+            return false;
+        };
+
+        let selection_offset = if let CursorState::Select(sel) = &self.cc_cursor {
+            sel.first().map_or(0, |idx| {
+                let (_, c) = idx.0.row_col(self.p.vis_cols.len());
+                c.0
+            })
+        } else {
+            0
+        };
+
         let view = tsv::ParsedTsv::parse(contents);
+        let table_width = view.calc_table_width();
+
+        if table_width > self.p.vis_cols.len() {
+            // If the copied data has more columns than current table, we'll just ignore it.
+            return false;
+        }
 
         // If any cell is failed to be parsed, we'll just give up all parsing then use internal
         // clipboard instead.
-        false
+
+        let mut slab = Vec::new();
+        let mut pastes = Vec::new();
+
+        for (row_offset, row_data) in view.iter_rows() {
+            let slab_id = slab.len();
+            slab.push(codec.create_empty_decoded_row());
+
+            // The restoration point of pastes stack.
+            let pastes_restore = pastes.len();
+
+            for (column, data) in row_data {
+                let col_idx = column + selection_offset;
+
+                if col_idx > self.p.vis_cols.len() {
+                    // If the column is out of range, we'll just ignore it.
+                    return false;
+                }
+
+                match codec.decode_column(data, col_idx, &mut slab[slab_id]) {
+                    Ok(_) => {
+                        pastes.push((
+                            VisRowOffset(row_offset),
+                            ColumnIdx(col_idx),
+                            RowSlabIndex(slab_id),
+                        ));
+                    }
+                    Err(DecodeErrorBehavior::SkipCell) => {
+                        // Skip this cell.
+                    }
+                    Err(DecodeErrorBehavior::SkipRow) => {
+                        pastes.drain(pastes_restore..);
+                        slab.pop();
+                        break;
+                    }
+                    Err(DecodeErrorBehavior::Abort) => {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        // Replace the clipboard content from the parsed data.
+        self.clipboard = Some(Clipboard {
+            slab: slab.into_boxed_slice(),
+            pastes: pastes.into_boxed_slice(),
+        });
+
+        true
     }
 
     fn try_dump_clipboard_content<V: RowViewer<R>>(
@@ -517,11 +593,18 @@ impl<R> UiState<R> {
         let mut width = 0;
         let mut height = 0;
 
+        // We're going to offset the column to the minimum column index to make the selection copy
+        // more intuitive. If not, the copied data will be shifted to the right if the selection is
+        // not the very first column.
+        let mut min_column = usize::MAX;
+
         for (row, column, ..) in clipboard.pastes.iter() {
             width = width.max(column.0 + 1);
             height = height.max(row.0 + 1);
+            min_column = min_column.min(column.0);
         }
 
+        let column_offset = min_column;
         let mut buf_out = String::new();
         let mut buf_tmp = String::new();
         let mut row_cursor = 0;
@@ -535,7 +618,7 @@ impl<R> UiState<R> {
             let mut column_cursor = 0;
 
             for (_, column, data_idx) in columns.into_iter() {
-                while column_cursor < column.0 {
+                while column_cursor < column.0 - column_offset {
                     tsv::write_tab(&mut buf_out);
                     column_cursor += 1;
                 }
