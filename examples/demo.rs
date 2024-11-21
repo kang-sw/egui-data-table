@@ -151,7 +151,7 @@ impl RowViewer<Row> for Viewer {
     fn show_cell_view(&mut self, ui: &mut egui::Ui, row: &Row, column: usize) {
         let _ = match column {
             0 => ui.label(&row.0),
-            1 => ui.label(&row.1.to_string()),
+            1 => ui.label(row.1.to_string()),
             2 => ui.checkbox(&mut { row.2 }, ""),
             3 => ui.label(match row.3 {
                 Grade::A => "A",
@@ -288,7 +288,7 @@ impl eframe::App for DemoApp {
 
                 ui.separator();
 
-                egui::widgets::global_dark_light_mode_buttons(ui);
+                egui::widgets::global_theme_preference_buttons(ui);
 
                 ui.separator();
 

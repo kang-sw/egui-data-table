@@ -116,19 +116,15 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                 for (vis_col, &col) in s.vis_cols().iter().enumerate() {
                     let vis_col = VisColumnPos(vis_col);
                     let mut painter = None;
-                    let (_, resp) = h.col(|ui| {
+                    let (col_rect, resp) = h.col(|ui| {
                         ui.horizontal_centered(|ui| {
                             if let Some(pos) = s.sort().iter().position(|(c, ..)| c == &col) {
-                                let asc = &s.sort()[pos].1;
+                                let is_asc = s.sort()[pos].1 .0 as usize;
 
                                 ui.colored_label(
-                                    if !asc.0 { Color32::RED } else { green },
-                                    RichText::new(format!(
-                                        "{}{}",
-                                        if asc.0 { "↗" } else { "↘" },
-                                        pos + 1,
-                                    ))
-                                    .monospace(),
+                                    [green, Color32::RED][is_asc],
+                                    RichText::new(format!("{}{}", ["↘", "↗"][is_asc], pos + 1,))
+                                        .monospace(),
                                 );
                             } else {
                                 ui.monospace(" ");
@@ -157,7 +153,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     if resp.hovered() && viewer.is_sortable_column(col.0) {
                         if let Some(p) = &painter {
                             p.rect_filled(
-                                resp.rect,
+                                col_rect,
                                 egui::Rounding::ZERO,
                                 visual.selection.bg_fill.gamma_multiply(0.2),
                             );
@@ -182,7 +178,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     if resp.dnd_hover_payload::<VisColumnPos>().is_some() {
                         if let Some(p) = &painter {
                             p.rect_filled(
-                                resp.rect,
+                                col_rect,
                                 egui::Rounding::ZERO,
                                 visual.selection.bg_fill.gamma_multiply(0.5),
                             );
@@ -596,7 +592,18 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                 });
 
                 // Forward DnD event if not any event was consumed by the response.
-                if !response_consumed && resp.contains_pointer() {
+
+                // FIXME: Upgrading egui 0.29 make interaction rectangle of response object
+                // larger(in y axis) than actually visible column cell size. To deal with this,
+                // I've used returned content area rectangle instead, expanding its width to
+                // response size.
+
+                let drop_area_rect = rect.with_max_x(resp.rect.max.x);
+                let contains_pointer = ctx
+                    .pointer_hover_pos()
+                    .is_some_and(|pos| drop_area_rect.contains(pos));
+
+                if !response_consumed && contains_pointer {
                     if let Some(new_value) =
                         viewer.on_cell_view_response(&table.rows[row_id.0], col.0, &resp)
                     {
