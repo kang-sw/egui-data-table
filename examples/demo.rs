@@ -346,9 +346,7 @@ fn main() {
     eframe::run_simple_native(
         "Spreadsheet Demo",
         eframe::NativeOptions {
-            default_theme: eframe::Theme::Dark,
             centered: true,
-
             ..Default::default()
         },
         {
