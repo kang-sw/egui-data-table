@@ -762,6 +762,36 @@ impl<R> UiState<R> {
         sel.contains(self.p.vis_cols.len(), row, col)
     }
 
+    fn get_highlight_changes<'a>(
+        &self,
+        table: &'a DataTable<R>,
+        sel: &[VisSelection],
+    ) -> (Vec<&'a R>, Vec<&'a R>) {
+        let mut ohs: BTreeSet<&VisSelection> = BTreeSet::default();
+        let nhs: BTreeSet<&VisSelection> = sel.iter().collect();
+
+        if let CursorState::Select(s) = &self.cc_cursor {
+            ohs = s.iter().collect();
+        }
+        let new_highlight = nhs.difference(&ohs);
+        let old_highlight = ohs.difference(&nhs);
+        let highlighted: Vec<&R> = new_highlight
+            .into_iter()
+            .map(|v| {
+                let (ic_r, _ic_c) = v.1.row_col(self.p.vis_cols.len());
+                let row_id = self.cc_rows[ic_r.0];
+                let row = &table.rows[row_id.0];
+                //table.rows.get(v.1 .0).unwrap()
+                row
+            })
+            .collect();
+        let unhighlighted: Vec<&R> = old_highlight
+            .into_iter()
+            .map(|v| table.rows.get(v.1 .0).unwrap())
+            .collect();
+        (highlighted, unhighlighted)
+    }
+
     pub fn push_new_command<V: RowViewer<R>>(
         &mut self,
         table: &mut DataTable<R>,
@@ -918,7 +948,9 @@ impl<R> UiState<R> {
                     self.cc_interactive_cell = sel[0].0;
                 }
 
+                let (highlighted, unhighlighted) = self.get_highlight_changes(table, &sel);
                 self.cc_cursor = CursorState::Select(sel);
+                vwr.on_highlight_change(&highlighted, &unhighlighted);
                 return;
             }
             Command::InsertRows(pivot, ref values) => {

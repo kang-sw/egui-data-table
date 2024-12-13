@@ -5,6 +5,7 @@ use egui_data_table::{
     viewer::{default_hotkeys, CellWriteContext, DecodeErrorBehavior, RowCodec, UiActionContext},
     RowViewer,
 };
+use log::info;
 
 /* ----------------------------------------- Data Scheme ---------------------------------------- */
 
@@ -225,6 +226,11 @@ impl RowViewer<Row> for Viewer {
     fn persist_ui_state(&self) -> bool {
         true
     }
+
+    fn on_highlight_change(&mut self, highlighted: &[&Row], unhighlighted: &[&Row]) {
+        info!("highlight {:?}", highlighted);
+        info!("unhighlight {:?}", unhighlighted);
+    }
 }
 
 /* ------------------------------------------ View Loop ----------------------------------------- */
@@ -342,6 +348,7 @@ impl eframe::App for DemoApp {
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
     use eframe::App;
+    env_logger::init();
 
     eframe::run_simple_native(
         "Spreadsheet Demo",
