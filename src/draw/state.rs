@@ -762,8 +762,15 @@ impl<R> UiState<R> {
         sel.contains(self.p.vis_cols.len(), row, col)
     }
 
+    fn vis_sel_to_row<'a>(&'a self, table: &'a DataTable<R>, sel: &VisSelection) -> &'a R {
+        let (ic_r, _ic_c) = sel.1.row_col(self.p.vis_cols.len());
+        let row_id = self.cc_rows[ic_r.0];
+        let row = &table.rows[row_id.0];
+        row
+    }
+
     fn get_highlight_changes<'a>(
-        &self,
+        &'a self,
         table: &'a DataTable<R>,
         sel: &[VisSelection],
     ) -> (Vec<&'a R>, Vec<&'a R>) {
@@ -777,17 +784,11 @@ impl<R> UiState<R> {
         let old_highlight = ohs.difference(&nhs);
         let highlighted: Vec<&R> = new_highlight
             .into_iter()
-            .map(|v| {
-                let (ic_r, _ic_c) = v.1.row_col(self.p.vis_cols.len());
-                let row_id = self.cc_rows[ic_r.0];
-                let row = &table.rows[row_id.0];
-                //table.rows.get(v.1 .0).unwrap()
-                row
-            })
+            .map(|v| self.vis_sel_to_row(table, v))
             .collect();
         let unhighlighted: Vec<&R> = old_highlight
             .into_iter()
-            .map(|v| table.rows.get(v.1 .0).unwrap())
+            .map(|v| self.vis_sel_to_row(table, v))
             .collect();
         (highlighted, unhighlighted)
     }
