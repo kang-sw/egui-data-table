@@ -950,8 +950,8 @@ impl<R> UiState<R> {
                 }
 
                 let (highlighted, unhighlighted) = self.get_highlight_changes(table, &sel);
-                self.cc_cursor = CursorState::Select(sel);
                 vwr.on_highlight_change(&highlighted, &unhighlighted);
+                self.cc_cursor = CursorState::Select(sel);
                 return;
             }
             Command::InsertRows(pivot, ref values) => {
