@@ -3,7 +3,7 @@
 pub mod draw;
 pub mod viewer;
 
-pub use draw::Renderer;
+pub use draw::{Renderer, Style};
 pub use viewer::{RowViewer, UiAction};
 
 /// You may want to sync egui version with this crate.
