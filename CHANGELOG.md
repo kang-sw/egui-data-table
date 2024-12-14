@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning].
 ### Added
 
 - New style flag to control editor behavior
-  - 
+  - `Style::single_click_edit_mode`: Make single click available to start edit mode.
 
 ### Removed
 
