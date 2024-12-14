@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## [0.4.1] - 2024-12-14
+
+### Added
+
+- Introduce `crate::Style` struct, which defines set of properties to control internal
+  behavior & visuals
+
+### Changed
+
+- Change various default visuals.
+
+## [0.4.0] - 2024-11-21
+
+### Changed
+
+- Bump upstream dependency `egui` version 0.29
+
+### Fixed
+
+- Fix incorrect drag and drop area calculation logic
+
 ## [0.3.1] - 2024-08-18
 
 ### Added
