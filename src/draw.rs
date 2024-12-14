@@ -22,7 +22,7 @@ mod tsv;
 
 /// Style configuration for the table.
 // TODO: Implement more style configurations.
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Copy)]
 #[non_exhaustive]
 pub struct Style {
     /// Background color override for selection. Default uses `visuals.selection.bg_fill`.
@@ -40,6 +40,10 @@ pub struct Style {
 
     /// If specify this as [`None`], the heterogeneous row height will be used.
     pub table_row_height: Option<f32>,
+
+    /// When enabled, single click on a cell will start editing mode. Default is `false` where
+    /// double action(click 1: select, click 2: edit) is required.
+    pub single_click_edit_mode: bool,
 }
 
 /* ------------------------------------------ Rendering ----------------------------------------- */
@@ -543,7 +547,9 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     s.cci_sel_update(linear_index);
                 }
 
-                if resp.clicked_by(PointerButton::Primary) && is_interactive_cell {
+                if resp.clicked_by(PointerButton::Primary)
+                    && (self.style.single_click_edit_mode || is_interactive_cell)
+                {
                     response_consumed = true;
                     commands.push(Command::CcEditStart(
                         row_id,
