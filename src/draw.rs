@@ -18,6 +18,23 @@ use format as f;
 pub(crate) mod state;
 mod tsv;
 
+/* -------------------------------------------- Style ------------------------------------------- */
+
+/// Style configuration for the table.
+// TODO: Implement more style configurations.
+#[derive(Default, Debug, Clone)]
+#[non_exhaustive]
+pub struct Style {
+    /// Background color override for selection. Default uses `visuals.selection.bg_fill`.
+    pub bg_selected_cell: Option<egui::Color32>,
+
+    /// Background color override for selected cell. Default uses `visuals.selection.bg_fill`.
+    pub bg_selected_highlight_cell: Option<egui::Color32>,
+
+    /// Foreground color for cells that are going to be selected when mouse is dropped.
+    pub fg_drag_selection: Option<egui::Color32>,
+}
+
 /* ------------------------------------------ Rendering ----------------------------------------- */
 
 pub struct Renderer<'a, R, V: RowViewer<R>> {
@@ -26,9 +43,10 @@ pub struct Renderer<'a, R, V: RowViewer<R>> {
     state: Option<Box<UiState<R>>>,
 
     config: TrivialConfig,
+    style: Style,
 }
 
-impl<'a, R, V: RowViewer<R>> egui::Widget for Renderer<'a, R, V> {
+impl<R, V: RowViewer<R>> egui::Widget for Renderer<'_, R, V> {
     fn ui(self, ui: &mut egui::Ui) -> Response {
         self.show(ui)
     }
@@ -50,7 +68,18 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
             table,
             config: viewer.trivial_config(),
             viewer,
+            style: Default::default(),
         }
+    }
+
+    pub fn with_style(mut self, style: Style) -> Self {
+        self.style = style;
+        self
+    }
+
+    pub fn with_style_modify(mut self, f: impl FnOnce(&mut Style)) -> Self {
+        f(&mut self.style);
+        self
     }
 
     pub fn with_table_row_height(mut self, height: f32) -> Self {
@@ -358,10 +387,12 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                 let s_cci_has_focus = s.cci_has_focus;
                 let s_cci_has_selection = s.has_cci_selection();
 
-                move |resp: &egui::Response| {
+                move |rect: &Rect, resp: &egui::Response| {
                     let cci_hovered: bool = s_cci_has_focus
                         && s_cci_has_selection
-                        && resp.rect.contains(pointer_interact_pos);
+                        && rect
+                            .with_max_x(resp.rect.right())
+                            .contains(pointer_interact_pos);
                     let sel_drag = cci_hovered && pointer_primary_down;
                     let sel_click = !s_cci_has_selection && resp.hovered() && pointer_primary_down;
 
@@ -375,7 +406,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
             row.set_selected(edit_state.is_some());
 
             // Render row header button
-            let (_, head_resp) = row.col(|ui| {
+            let (head_rect, head_resp) = row.col(|ui| {
                 // Calculate the position where values start.
                 row_elem_start = ui.max_rect().right_top();
 
@@ -398,7 +429,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                 });
             });
 
-            if check_mouse_dragging_selection(&head_resp) {
+            if check_mouse_dragging_selection(&head_rect, &head_resp) {
                 s.cci_sel_update_row(vis_row);
             }
 
@@ -417,21 +448,39 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                 let is_interactive_cell = interactive_row.is_some_and(|x| x == vis_col);
                 let mut response_consumed = s.is_editing();
 
-                // Mark background filled if selected.
-                row.set_selected(is_editing || cci_selected);
-
                 let (rect, resp) = row.col(|ui| {
                     let ui_max_rect = ui.max_rect();
 
+                    if cci_selected {
+                        ui.painter().rect_stroke(
+                            ui_max_rect,
+                            no_rounding,
+                            Stroke {
+                                width: 2.,
+                                color: self
+                                    .style
+                                    .fg_drag_selection
+                                    .unwrap_or(visual.selection.bg_fill),
+                            },
+                        );
+                    }
+
                     if is_interactive_cell {
                         ui.painter().rect_filled(
-                            ui_max_rect.expand(3.),
+                            ui_max_rect.expand(2.),
                             no_rounding,
-                            visual.warn_fg_color.gamma_multiply(0.2),
+                            self.style
+                                .bg_selected_highlight_cell
+                                .unwrap_or(visual.selection.bg_fill),
                         );
-                    } else if !cci_selected && selected {
-                        ui.painter()
-                            .rect_filled(ui_max_rect, no_rounding, visual.extreme_bg_color);
+                    } else if selected {
+                        ui.painter().rect_filled(
+                            ui_max_rect.expand(1.),
+                            no_rounding,
+                            self.style
+                                .bg_selected_cell
+                                .unwrap_or(visual.selection.bg_fill.gamma_multiply(0.5)),
+                        );
                     }
 
                     // Actual widget rendering happens within this line.
@@ -452,6 +501,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                         viewer.show_cell_view(ui, &table.rows[row_id.0], col.0);
                     });
 
+                    #[cfg(any())]
                     if selected {
                         ui.painter().rect_stroke(
                             ui_max_rect,
@@ -483,7 +533,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                 new_maximum_height = rect.height().max(new_maximum_height);
 
                 // -- Mouse Actions --
-                if check_mouse_dragging_selection(&resp) {
+                if check_mouse_dragging_selection(&rect, &resp) {
                     // Expand cci selection
                     response_consumed = true;
                     s.cci_sel_update(linear_index);
@@ -729,7 +779,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
     }
 }
 
-impl<'a, R, V: RowViewer<R>> Drop for Renderer<'a, R, V> {
+impl<R, V: RowViewer<R>> Drop for Renderer<'_, R, V> {
     fn drop(&mut self) {
         self.table.ui = self.state.take();
     }
