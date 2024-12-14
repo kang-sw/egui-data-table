@@ -7,7 +7,7 @@ use egui_extras::Column;
 use tap::prelude::{Pipe, Tap};
 
 use crate::{
-    viewer::{EmptyRowCreateContext, RowViewer, TrivialConfig},
+    viewer::{EmptyRowCreateContext, RowViewer},
     DataTable, UiAction,
 };
 
@@ -22,7 +22,7 @@ mod tsv;
 
 /// Style configuration for the table.
 // TODO: Implement more style configurations.
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Copy)]
 #[non_exhaustive]
 pub struct Style {
     /// Background color override for selection. Default uses `visuals.selection.bg_fill`.
@@ -33,6 +33,17 @@ pub struct Style {
 
     /// Foreground color for cells that are going to be selected when mouse is dropped.
     pub fg_drag_selection: Option<egui::Color32>,
+
+    /* ·························································································· */
+    /// Maximum number of undo history. This is applied when actual action is performed.
+    pub max_undo_history: usize,
+
+    /// If specify this as [`None`], the heterogeneous row height will be used.
+    pub table_row_height: Option<f32>,
+
+    /// When enabled, single click on a cell will start editing mode. Default is `false` where
+    /// double action(click 1: select, click 2: edit) is required.
+    pub single_click_edit_mode: bool,
 }
 
 /* ------------------------------------------ Rendering ----------------------------------------- */
@@ -41,8 +52,6 @@ pub struct Renderer<'a, R, V: RowViewer<R>> {
     table: &'a mut DataTable<R>,
     viewer: &'a mut V,
     state: Option<Box<UiState<R>>>,
-
-    config: TrivialConfig,
     style: Style,
 }
 
@@ -66,7 +75,6 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                 x.validate_identity(viewer);
             })),
             table,
-            config: viewer.trivial_config(),
             viewer,
             style: Default::default(),
         }
@@ -83,12 +91,12 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
     }
 
     pub fn with_table_row_height(mut self, height: f32) -> Self {
-        self.config.table_row_height = Some(height);
+        self.style.table_row_height = Some(height);
         self
     }
 
     pub fn with_max_undo_history(mut self, max_undo_history: usize) -> Self {
-        self.config.max_undo_history = max_undo_history;
+        self.style.max_undo_history = max_undo_history;
         self
     }
 
@@ -539,7 +547,9 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     s.cci_sel_update(linear_index);
                 }
 
-                if resp.clicked_by(PointerButton::Primary) && is_interactive_cell {
+                if resp.clicked_by(PointerButton::Primary)
+                    && (self.style.single_click_edit_mode || is_interactive_cell)
+                {
                     response_consumed = true;
                     commands.push(Command::CcEditStart(
                         row_id,
@@ -703,13 +713,13 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
             }
 
             // Update row height cache if necessary.
-            if self.config.table_row_height.is_none() && prev_row_height != new_maximum_height {
+            if self.style.table_row_height.is_none() && prev_row_height != new_maximum_height {
                 row_height_updates.push((vis_row, new_maximum_height));
             }
         }; // ~ render_fn
 
         // Actual rendering
-        if let Some(height) = self.config.table_row_height {
+        if let Some(height) = self.style.table_row_height {
             body.rows(height, cc_row_heights.len(), render_fn);
         } else {
             body.heterogeneous_rows(cc_row_heights.iter().cloned(), render_fn);
@@ -769,7 +779,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                         });
                     }
 
-                    s.push_new_command(table, viewer, cmd, self.config.max_undo_history);
+                    s.push_new_command(table, viewer, cmd, self.style.max_undo_history);
                 }
             }
         }
