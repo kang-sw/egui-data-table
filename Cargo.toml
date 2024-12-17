@@ -26,6 +26,8 @@ thiserror = "2"
 eframe = { version = "0.29", features = ["serde", "persistence"] }
 fastrand = "2"
 names = { version = "0.14", default-features = false }
+log = "0.4"
+env_logger = "0.11.5"
 
 [features]
 default = ["persistency"]

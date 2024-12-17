@@ -210,6 +210,11 @@ pub trait RowViewer<R>: 'static {
         let _ = (row, column);
     }
 
+    /// Called when a row selected/highlighted status changes.
+    fn on_highlight_change(&mut self, highlighted: &[&R], unhighlighted: &[&R]) {
+        let (_, _) = (highlighted, unhighlighted);
+    }
+
     /// Return hotkeys for the current context.
     fn hotkeys(&mut self, context: &UiActionContext) -> Vec<(egui::KeyboardShortcut, UiAction)> {
         self::default_hotkeys(context)
