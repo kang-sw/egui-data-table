@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## [0.6.0]
+
+### Changed
+
+- **BREAKING** Refactor `Viewer::column_render_config` to take additional parameter.
+
 ## [0.5.1]
 
 ### Added

@@ -97,7 +97,13 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
         self
     }
 
-    pub fn show(mut self, ui: &mut egui::Ui) -> Response {
+    pub fn show(self, ui: &mut egui::Ui) -> Response {
+        egui::ScrollArea::horizontal()
+            .show(ui, |ui| self.impl_show(ui))
+            .inner
+    }
+
+    fn impl_show(mut self, ui: &mut egui::Ui) -> Response {
         let ctx = &ui.ctx().clone();
         let ui_id = ui.id();
         let style = ui.style().clone();
@@ -121,8 +127,14 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
 
         let mut builder = egui_extras::TableBuilder::new(ui).column(Column::auto());
 
-        for &column in s.vis_cols().iter() {
-            builder = builder.column(viewer.column_render_config(column.0));
+        let iter_vis_cols_with_flag = s
+            .vis_cols()
+            .iter()
+            .enumerate()
+            .map(|(index, column)| (column, index + 1 == s.vis_cols().len()));
+
+        for (column, flag) in iter_vis_cols_with_flag {
+            builder = builder.column(viewer.column_render_config(column.0, flag));
         }
 
         if replace(&mut s.cci_want_move_scroll, false) {
@@ -137,13 +149,9 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
             .max_scroll_height(f32::MAX)
             .sense(Sense::click_and_drag().tap_mut(|s| s.focusable = true))
             .header(20., |mut h| {
-                h.set_selected(s.cci_has_focus);
                 h.col(|ui| {
-                    ui.centered_and_justified(|ui| {
-                        ui.monospace("POS / ID");
-                    });
+                    // TODO: Add `Configure Sorting` button
                 });
-                h.set_selected(false);
 
                 let has_any_hidden_col = s.vis_cols().len() != s.num_columns();
 
@@ -266,15 +274,16 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                 table.ui_mut().separator();
             })
             .body(|body: egui_extras::TableBody<'_>| {
-                resp_ret =
-                    Some(self.show_body(body, painter, commands, ctx, &style, ui_id, resp_total));
+                resp_ret = Some(
+                    self.impl_show_body(body, painter, commands, ctx, &style, ui_id, resp_total),
+                );
             });
 
         resp_ret.unwrap_or_else(|| ui.label("??"))
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn show_body(
+    fn impl_show_body(
         &mut self,
         body: egui_extras::TableBody<'_>,
         mut _painter: egui::Painter,
@@ -329,7 +338,6 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
 
                             _ => return true,
                         }
-
                         false
                     })
                 });
@@ -364,6 +372,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
         let row_id_digits = table.len().max(1).ilog10();
 
         let body_max_rect = body.max_rect();
+        let has_any_sort = !s.sort().is_empty();
 
         let pointer_interact_pos = ctx.input(|i| i.pointer.latest_pos().unwrap_or_default());
         let pointer_primary_down = ctx.input(|i| i.pointer.button_down(PointerButton::Primary));
@@ -418,10 +427,21 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.separator();
 
-                    ui.monospace(
-                        RichText::from(f!("{:·>width$}", row_id.0, width = row_id_digits as usize))
+                    if has_any_sort {
+                        ui.monospace(
+                            RichText::from(f!(
+                                "{:·>width$}",
+                                row_id.0,
+                                width = row_id_digits as usize
+                            ))
                             .strong(),
-                    );
+                        );
+                    } else {
+                        ui.monospace(
+                            RichText::from(f!("{:>width$}", "", width = row_id_digits as usize))
+                                .strong(),
+                        );
+                    }
 
                     ui.monospace(
                         RichText::from(f!(
