@@ -27,7 +27,6 @@ pub struct DataTable<R> {
     /// using `Vec` for simplicity.
     rows: Vec<R>,
 
-    /// Is Dirty?
     dirty_flag: bool,
 
     /// Ui
@@ -66,28 +65,19 @@ impl<R> DataTable<R> {
         Default::default()
     }
 
-    pub fn len(&self) -> usize {
-        self.rows.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.rows.is_empty()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &R> {
-        self.rows.iter()
-    }
-
     pub fn take(&mut self) -> Vec<R> {
-        self.ui = None;
+        self.mark_dirty();
         std::mem::take(&mut self.rows)
     }
 
+    /// Replace the current data with the new one.
     pub fn replace(&mut self, new: Vec<R>) -> Vec<R> {
-        self.ui = None;
+        self.mark_dirty();
         std::mem::replace(&mut self.rows, new)
     }
 
+    /// Insert a row at the specified index. This is thin wrapper of `Vec::retain` which provides
+    /// additional dirty flag optimization.
     pub fn retain(&mut self, mut f: impl FnMut(&R) -> bool) {
         let mut removed_any = false;
         self.rows.retain(|row| {
@@ -97,22 +87,37 @@ impl<R> DataTable<R> {
         });
 
         if removed_any {
-            self.ui = None;
+            self.mark_dirty();
         }
     }
 
-    pub fn clear_dirty_flag(&mut self) {
-        self.dirty_flag = false;
-    }
-
+    /// Check if the UI is obsolete and needs to be re-rendered due to data changes.
     pub fn is_dirty(&self) -> bool {
-        self.dirty_flag
+        self.ui.as_ref().is_some_and(|ui| ui.cc_is_dirty())
     }
 
+    #[deprecated(
+        since = "0.5.1",
+        note = "user-driven dirty flag clearance is redundant"
+    )]
+    pub fn clear_dirty_flag(&mut self) {
+        // This is intentionally became a no-op
+    }
+
+    fn mark_dirty(&mut self) {
+        let Some(state) = self.ui.as_mut() else {
+            return;
+        };
+
+        state.force_mark_dirty();
+    }
+
+    /// Returns true if there were any user-driven(triggered by UI) modifications.
     pub fn has_user_modification(&self) -> bool {
         self.dirty_flag
     }
 
+    /// Clears the user-driven(triggered by UI) modification flag.
     pub fn clear_user_modification_flag(&mut self) {
         self.dirty_flag = false;
     }
@@ -129,4 +134,30 @@ impl<R> Extend<R> for DataTable<R> {
 
 fn default<T: Default>() -> T {
     T::default()
+}
+
+impl<R> std::ops::Deref for DataTable<R> {
+    type Target = Vec<R>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.rows
+    }
+}
+
+impl<R> std::ops::DerefMut for DataTable<R> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.mark_dirty();
+        &mut self.rows
+    }
+}
+
+impl<R: Clone> Clone for DataTable<R> {
+    fn clone(&self) -> Self {
+        Self {
+            rows: self.rows.clone(),
+            // UI field is treated as cache.
+            ui: None,
+            dirty_flag: self.dirty_flag,
+        }
+    }
 }

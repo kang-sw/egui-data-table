@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## [0.5.1]
+
+### Added
+
+- Implement `Clone`, `Deref`, `DerefMut` for `DataTable` widget.
+- Implement `Serialize`, `Deserialize` for `DataTable` widget.
+
+### Changed
+
+- Manual dirty flag clearing now deprecated.
+
+### Fixed
+
+
 ## [0.5.0] 
 
 ### Added

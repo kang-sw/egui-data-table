@@ -63,16 +63,13 @@ impl<R, V: RowViewer<R>> egui::Widget for Renderer<'_, R, V> {
 
 impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
     pub fn new(table: &'a mut DataTable<R>, viewer: &'a mut V) -> Self {
-        Self {
-            state: Some(table.ui.take().unwrap_or_default().tap_mut(|x| {
-                if table.rows.is_empty() {
-                    table
-                        .rows
-                        .push(viewer.new_empty_row_for(EmptyRowCreateContext::InsertNewLine));
-                    x.force_mark_dirty();
-                }
+        if table.rows.is_empty() {
+            table.push(viewer.new_empty_row_for(EmptyRowCreateContext::InsertNewLine));
+        }
 
-                x.validate_identity(viewer);
+        Self {
+            state: Some(table.ui.take().unwrap_or_default().tap_mut(|state| {
+                state.validate_identity(viewer);
             })),
             table,
             viewer,

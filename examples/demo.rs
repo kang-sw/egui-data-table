@@ -310,17 +310,23 @@ impl eframe::App for DemoApp {
                     )
                     .dnd_set_drag_payload(String::from("Hallo~"));
 
-                ui.checkbox(&mut self.viewer.row_protection, "Row Proection")
-                    .on_hover_text(
-                        "If checked, any rows `Is Student` marked \
+                egui::menu::menu_button(ui, "🎌 Flags", |ui| {
+                    ui.checkbox(&mut self.viewer.row_protection, "Row Proection")
+                        .on_hover_text(
+                            "If checked, any rows `Is Student` marked \
                         won't be deleted or overwritten by UI actions.",
-                    );
+                        );
 
-                ui.checkbox(
-                    &mut self.style_override.single_click_edit_mode,
-                    "Single Click Edit",
-                )
-                .on_hover_text("If checked, cells will be edited with a single click.");
+                    ui.checkbox(
+                        &mut self.style_override.single_click_edit_mode,
+                        "Single Click Edit",
+                    )
+                    .on_hover_text("If checked, cells will be edited with a single click.");
+
+                    if ui.button("Shuffle Rows").clicked() {
+                        fastrand::shuffle(&mut self.table);
+                    }
+                })
             })
         });
 
@@ -346,7 +352,7 @@ impl eframe::App for DemoApp {
             ui.add(
                 egui_data_table::Renderer::new(&mut self.table, &mut self.viewer)
                     .with_style(self.style_override),
-            );
+            )
         });
     }
 }
