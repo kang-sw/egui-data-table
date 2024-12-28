@@ -149,7 +149,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
             .max_scroll_height(f32::MAX)
             .sense(Sense::click_and_drag().tap_mut(|s| s.focusable = true))
             .header(20., |mut h| {
-                h.col(|ui| {
+                h.col(|_ui| {
                     // TODO: Add `Configure Sorting` button
                 });
 
