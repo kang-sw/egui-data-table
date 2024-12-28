@@ -5,6 +5,7 @@ use egui_data_table::{
     viewer::{default_hotkeys, CellWriteContext, DecodeErrorBehavior, RowCodec, UiActionContext},
     RowViewer,
 };
+use log::info;
 
 /* ----------------------------------------- Data Scheme ---------------------------------------- */
 
@@ -225,6 +226,11 @@ impl RowViewer<Row> for Viewer {
     fn persist_ui_state(&self) -> bool {
         true
     }
+
+    fn on_highlight_change(&mut self, highlighted: &[&Row], unhighlighted: &[&Row]) {
+        info!("highlight {:?}", highlighted);
+        info!("unhighlight {:?}", unhighlighted);
+    }
 }
 
 /* ------------------------------------------ View Loop ----------------------------------------- */
@@ -232,6 +238,7 @@ impl RowViewer<Row> for Viewer {
 struct DemoApp {
     table: egui_data_table::DataTable<Row>,
     viewer: Viewer,
+    style_override: egui_data_table::Style,
 }
 
 impl Default for DemoApp {
@@ -262,6 +269,7 @@ impl Default for DemoApp {
                 hotkeys: Vec::new(),
                 row_protection: false,
             },
+            style_override: Default::default(),
         }
     }
 }
@@ -307,6 +315,12 @@ impl eframe::App for DemoApp {
                         "If checked, any rows `Is Student` marked \
                         won't be deleted or overwritten by UI actions.",
                     );
+
+                ui.checkbox(
+                    &mut self.style_override.single_click_edit_mode,
+                    "Single Click Edit",
+                )
+                .on_hover_text("If checked, cells will be edited with a single click.");
             })
         });
 
@@ -329,10 +343,10 @@ impl eframe::App for DemoApp {
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.add(egui_data_table::Renderer::new(
-                &mut self.table,
-                &mut self.viewer,
-            ));
+            ui.add(
+                egui_data_table::Renderer::new(&mut self.table, &mut self.viewer)
+                    .with_style(self.style_override),
+            );
         });
     }
 }
@@ -342,6 +356,7 @@ impl eframe::App for DemoApp {
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
     use eframe::App;
+    env_logger::init();
 
     eframe::run_simple_native(
         "Spreadsheet Demo",
