@@ -765,8 +765,8 @@ impl<R> UiState<R> {
     fn vis_sel_to_row<'a>(&'a self, table: &'a DataTable<R>, sel: &VisSelection) -> &'a R {
         let (ic_r, _ic_c) = sel.1.row_col(self.p.vis_cols.len());
         let row_id = self.cc_rows[ic_r.0];
-        let row = &table.rows[row_id.0];
-        row
+
+        (&table.rows[row_id.0]) as _
     }
 
     fn get_highlight_changes<'a>(
