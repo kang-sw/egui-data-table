@@ -36,6 +36,8 @@ pub struct Style {
 
     /* ·························································································· */
     /// Maximum number of undo history. This is applied when actual action is performed.
+    ///
+    /// Setting value '0' results in kinda appropriate default value.
     pub max_undo_history: usize,
 
     /// If specify this as [`None`], the heterogeneous row height will be used.
@@ -796,7 +798,16 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                         });
                     }
 
-                    s.push_new_command(table, viewer, cmd, self.style.max_undo_history);
+                    s.push_new_command(
+                        table,
+                        viewer,
+                        cmd,
+                        if self.style.max_undo_history == 0 {
+                            100
+                        } else {
+                            self.style.max_undo_history
+                        },
+                    );
                 }
             }
         }
