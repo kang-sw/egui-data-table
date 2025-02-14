@@ -8,18 +8,18 @@ name = "demo"
 path = "../examples/demo.rs"
 
 [dependencies]
-egui = "0.30"
-egui_extras = { version = "0.30", default-features = false, features = [
+egui = "0.31"
+egui_extras = { version = "0.31", default-features = false, features = [
     "serde",
 ] }
-eframe = { version = "0.30", features = ["serde", "persistence"] }
+eframe = { version = "0.31", features = ["serde", "persistence"] }
 
 egui-data-table = { path = ".." }
 env_logger = "0.11.5"
 
 fastrand = "2"
 names = { version = "0.14", default-features = false }
-getrandom = { version = "0.2", features = ["js"] }
+getrandom = { version = "0.3" }
 
 tap = "1"
 log = "0.4"
