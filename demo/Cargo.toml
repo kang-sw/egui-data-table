@@ -19,7 +19,7 @@ env_logger = "0.11.5"
 
 fastrand = "2"
 names = { version = "0.14", default-features = false }
-getrandom = { version = "0.3" }
+getrandom = { version = "0.3", features = ["wasm_js"] }
 
 tap = "1"
 log = "0.4"
