@@ -1,7 +1,8 @@
 use std::mem::{replace, take};
 
 use egui::{
-    Align, Color32, Event, Layout, PointerButton, Rect, Response, RichText, Sense, Stroke, Widget,
+    Align, Color32, Event, Layout, PointerButton, Rect, Response, RichText, Sense, Stroke,
+    StrokeKind, Widget,
 };
 use egui_extras::Column;
 use tap::prelude::{Pipe, Tap};
@@ -149,7 +150,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
             .drag_to_scroll(false) // Drag is used for selection;
             .striped(true)
             .max_scroll_height(f32::MAX)
-            .sense(Sense::click_and_drag().tap_mut(|s| s.focusable = true))
+            .sense(Sense::click_and_drag().tap_mut(|s| s.set(Sense::FOCUSABLE, true)))
             .header(20., |mut h| {
                 h.col(|_ui| {
                     // TODO: Add `Configure Sorting` button
@@ -198,7 +199,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                         if let Some(p) = &painter {
                             p.rect_filled(
                                 col_rect,
-                                egui::Rounding::ZERO,
+                                egui::CornerRadius::ZERO,
                                 visual.selection.bg_fill.gamma_multiply(0.2),
                             );
                         }
@@ -223,7 +224,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                         if let Some(p) = &painter {
                             p.rect_filled(
                                 col_rect,
-                                egui::Rounding::ZERO,
+                                egui::CornerRadius::ZERO,
                                 visual.selection.bg_fill.gamma_multiply(0.5),
                             );
                         }
@@ -300,7 +301,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
         let table = &mut *self.table;
         let visual = &style.visuals;
         let visible_cols = s.vis_cols().clone();
-        let no_rounding = egui::Rounding::ZERO;
+        let no_rounding = egui::CornerRadius::ZERO;
 
         let mut actions = Vec::<UiAction>::new();
         let mut edit_started = false;
@@ -489,6 +490,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                                     .fg_drag_selection
                                     .unwrap_or(visual.selection.bg_fill),
                             },
+                            StrokeKind::Inside,
                         );
                     }
 
@@ -706,7 +708,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     .min_size(editing_cell_rect.size())
                     .max_width(editing_cell_rect.width())
                     .title_bar(false)
-                    .frame(egui::Frame::none().rounding(egui::Rounding::same(3.)))
+                    .frame(egui::Frame::NONE.corner_radius(egui::CornerRadius::same(3)))
                     .show(ctx, |ui| {
                         ui.with_layout(Layout::top_down_justified(Align::LEFT), |ui| {
                             if let Some(resp) =
@@ -784,9 +786,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
         for cmd in commands {
             match cmd {
                 Command::CcUpdateSystemClipboard(new_content) => {
-                    ctx.output_mut(|x| {
-                        x.copied_text = new_content;
-                    });
+                    ctx.copy_text(new_content);
                 }
                 cmd => {
                     if matches!(cmd, Command::CcCommitEdit) {
