@@ -32,6 +32,9 @@ pub struct Style {
     /// Background color override for selected cell. Default uses `visuals.selection.bg_fill`.
     pub bg_selected_highlight_cell: Option<egui::Color32>,
 
+    /// Foreground color override for selected cell. Default uses `visuals.strong_text_colors`.
+    pub fg_selected_highlight_cell: Option<egui::Color32>,
+
     /// Foreground color for cells that are going to be selected when mouse is dropped.
     pub fg_drag_selection: Option<egui::Color32>,
 
@@ -47,6 +50,13 @@ pub struct Style {
     /// When enabled, single click on a cell will start editing mode. Default is `false` where
     /// double action(click 1: select, click 2: edit) is required.
     pub single_click_edit_mode: bool,
+
+    /// How to align cell contents. Default is left-aligned.
+    pub cell_align: egui::Align,
+
+    /// Color to use for the stroke above/below focused row.
+    /// If `None`, defaults to a darkened `warn_fg_color`.
+    pub focused_row_stroke: Option<egui::Color32>,
 }
 
 /* ------------------------------------------ Rendering ----------------------------------------- */
@@ -149,6 +159,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
             .columns(Column::auto(), s.num_columns() - s.vis_cols().len())
             .drag_to_scroll(false) // Drag is used for selection;
             .striped(true)
+            .cell_layout(egui::Layout::default().with_cross_align(self.style.cell_align))
             .max_scroll_height(f32::MAX)
             .sense(Sense::click_and_drag().tap_mut(|s| s.set(Sense::FOCUSABLE, true)))
             .header(20., |mut h| {
@@ -520,7 +531,13 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                         .widgets
                         .noninteractive
                         .fg_stroke
-                        .color = visual.strong_text_color();
+                        .color = if is_interactive_cell {
+                        self.style
+                            .fg_selected_highlight_cell
+                            .unwrap_or(visual.strong_text_color())
+                    } else {
+                        visual.strong_text_color()
+                    };
 
                     // FIXME: After egui 0.27, now the widgets spawned inside this closure
                     // intercepts interactions, which is basically natural behavior(Upper layer
@@ -545,7 +562,10 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     if interactive_row.is_some() && !is_editing {
                         let st = Stroke {
                             width: 1.,
-                            color: visual.warn_fg_color.gamma_multiply(0.5),
+                            color: self
+                                .style
+                                .focused_row_stroke
+                                .unwrap_or(visual.warn_fg_color.gamma_multiply(0.5)),
                         };
 
                         let xr = ui_max_rect.x_range();
