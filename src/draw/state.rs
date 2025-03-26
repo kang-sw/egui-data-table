@@ -911,12 +911,18 @@ impl<R> UiState<R> {
                 let mut values = values.to_vec();
 
                 values.retain(|(row, col, slab_id)| {
-                    vwr.confirm_cell_write_by_ui(
-                        &table.rows[row.0],
-                        &slab[slab_id.0],
-                        col.0,
-                        context,
-                    )
+                    
+                    if vwr.is_editable_cell(col.0, row.0) {
+                        vwr.confirm_cell_write_by_ui(
+                            &table.rows[row.0],
+                            &slab[slab_id.0],
+                            col.0,
+                            context,
+                        )
+                    } else {
+                        false
+                    }
+                    
                 });
 
                 return self.push_new_command(
