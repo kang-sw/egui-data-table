@@ -781,6 +781,9 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                 s.cci_has_focus = true;
             } else if resp.clicked_elsewhere() {
                 s.cci_has_focus = false;
+                if s.is_editing() {
+                    commands.push(Command::CcCommitEdit)
+                }
             }
         }
 
