@@ -546,7 +546,9 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     // widgets). However, this change breaks current implementation which relies on
                     // the previous table behavior.
                     ui.add_enabled_ui(false, |ui| {
-                        viewer.show_cell_view(ui, &table.rows[row_id.0], col.0);
+                        if !(is_editing && is_interactive_cell) {
+                            viewer.show_cell_view(ui, &table.rows[row_id.0], col.0);
+                        }
                     });
 
                     #[cfg(any())]
@@ -591,9 +593,10 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                 }
 
                 let editable = viewer.is_editable_cell(vis_col.0, vis_row.0);
-                
-                if editable && (resp.clicked_by(PointerButton::Primary)
-                    && (self.style.single_click_edit_mode || is_interactive_cell))
+
+                if editable
+                    && (resp.clicked_by(PointerButton::Primary)
+                        && (self.style.single_click_edit_mode || is_interactive_cell))
                 {
                     response_consumed = true;
                     commands.push(Command::CcEditStart(
@@ -641,7 +644,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     let mut n_sep_menu = 0;
                     let mut draw_sep = false;
 
-                    [
+                    let context_menu_items = [
                         Some((selected, "🖻", "Selection: Copy", UiAction::CopySelection)),
                         Some((selected, "🖻", "Selection: Cut", UiAction::CutSelection)),
                         Some((selected, "🗙", "Selection: Clear", UiAction::DeleteSelection)),
@@ -653,15 +656,31 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                         )),
                         None,
                         Some((clip, "➿", "Clipboard: Paste", UiAction::PasteInPlace)),
-                        Some((clip && viewer.allow_row_insertions(), "🛠", "Clipboard: Insert", UiAction::PasteInsert)),
+                        Some((
+                            clip && viewer.allow_row_insertions(),
+                            "🛠",
+                            "Clipboard: Insert",
+                            UiAction::PasteInsert,
+                        )),
                         None,
-                        Some((viewer.allow_row_insertions(), "🗐", "Row: Duplicate", UiAction::DuplicateRow)),
-                        Some((viewer.allow_row_deletions(), "🗙", "Row: Delete", UiAction::DeleteRow)),
+                        Some((
+                            viewer.allow_row_insertions(),
+                            "🗐",
+                            "Row: Duplicate",
+                            UiAction::DuplicateRow,
+                        )),
+                        Some((
+                            viewer.allow_row_deletions(),
+                            "🗙",
+                            "Row: Delete",
+                            UiAction::DeleteRow,
+                        )),
                         None,
                         Some((b_undo, "⎗", "Undo", UiAction::Undo)),
                         Some((b_redo, "⎘", "Redo", UiAction::Redo)),
-                    ]
-                    .map(|opt| {
+                    ];
+
+                    context_menu_items.map(|opt| {
                         if let Some((icon, label, action)) =
                             opt.filter(|x| x.0).map(|x| (x.1, x.2, x.3))
                         {
