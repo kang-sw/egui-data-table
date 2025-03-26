@@ -92,6 +92,14 @@ impl RowViewer<PartStatesRow> for Viewer {
         }
     }
 
+    fn allow_row_insertions(&mut self) -> bool {
+        false
+    }
+
+    fn allow_row_deletions(&mut self) -> bool {
+        false
+    }
+
     fn show_cell_view(&mut self, ui: &mut Ui, row: &PartStatesRow, column: usize) {
         match column {
             0 => {

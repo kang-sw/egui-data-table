@@ -124,6 +124,16 @@ pub trait RowViewer<R>: 'static {
         true
     }
 
+    /// Returns if row insertions are allowed.
+    fn allow_row_insertions(&mut self) -> bool {
+        true
+    }
+
+    /// Returns if row deletions are allowed.
+    fn allow_row_deletions(&mut self) -> bool {
+        true
+    }
+
     /// Compare two column contents for sort.
     fn compare_cell(&self, row_a: &R, row_b: &R, column: usize) -> std::cmp::Ordering {
         let _ = (row_a, row_b, column);

@@ -1362,20 +1362,24 @@ impl<R> UiState<R> {
                 vec![Command::InsertRows(pos, row_values)]
             }
             UiAction::DuplicateRow => {
-                let rows = self
-                    .collect_selected_rows()
-                    .into_iter()
-                    .map(|x| self.cc_rows[x.0])
-                    .map(|r| vwr.clone_row_for_insertion(&table.rows[r.0]))
-                    .collect();
+                if vwr.allow_row_insertions() {
+                    let rows = self
+                        .collect_selected_rows()
+                        .into_iter()
+                        .map(|x| self.cc_rows[x.0])
+                        .map(|r| vwr.clone_row_for_insertion(&table.rows[r.0]))
+                        .collect();
 
-                let pos = if self.p.sort.is_empty() {
-                    self.cc_rows[ic_r.0]
+                    let pos = if self.p.sort.is_empty() {
+                        self.cc_rows[ic_r.0]
+                    } else {
+                        RowIdx(table.rows.len())
+                    };
+
+                    vec![Command::InsertRows(pos, rows)]
                 } else {
-                    RowIdx(table.rows.len())
-                };
-
-                vec![Command::InsertRows(pos, rows)]
+                    vec![]
+                }
             }
             UiAction::DeleteSelection => {
                 let default = vwr.new_empty_row_for(EmptyRowCreateContext::DeletionDefault);
@@ -1392,14 +1396,18 @@ impl<R> UiState<R> {
                 }]
             }
             UiAction::DeleteRow => {
-                let rows = self
-                    .collect_selected_rows()
-                    .into_iter()
-                    .map(|x| self.cc_rows[x.0])
-                    .filter(|row| vwr.confirm_row_deletion_by_ui(&table.rows[row.0]))
-                    .collect();
+                if vwr.allow_row_deletions() {
+                    let rows = self
+                        .collect_selected_rows()
+                        .into_iter()
+                        .map(|x| self.cc_rows[x.0])
+                        .filter(|row| vwr.confirm_row_deletion_by_ui(&table.rows[row.0]))
+                        .collect();
 
-                vec![Command::RemoveRow(rows)]
+                    vec![Command::RemoveRow(rows)]
+                } else {
+                    vec![]
+                }
             }
             UiAction::SelectAll => {
                 if self.cc_rows.is_empty() {
