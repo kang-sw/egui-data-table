@@ -328,7 +328,7 @@ impl eframe::App for DemoApp {
                     .dnd_set_drag_payload(String::from("Hallo~"));
 
                 egui::menu::menu_button(ui, "🎌 Flags", |ui| {
-                    ui.checkbox(&mut self.viewer.row_protection, "Row Proection")
+                    ui.checkbox(&mut self.viewer.row_protection, "Row Protection")
                         .on_hover_text(
                             "If checked, any rows `Is Student` marked \
                         won't be deleted or overwritten by UI actions.",
