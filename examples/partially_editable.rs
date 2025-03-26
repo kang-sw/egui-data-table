@@ -5,6 +5,7 @@
 //!
 //! See [`Viewer::is_editable_cell`], [`Viewer::allow_row_insertions`] and [`Viewer::allow_row_deletions`] 
 
+use std::borrow::Cow;
 use egui::{Response, Ui};
 use egui_data_table::RowViewer;
 use std::collections::HashMap;
@@ -100,6 +101,15 @@ struct Viewer {
 impl RowViewer<PartStatesRow> for Viewer {
     fn num_columns(&mut self) -> usize {
         3
+    }
+
+    fn column_name(&mut self, column: usize) -> Cow<'static, str> {
+        match column {
+            0 => "Manufacturer".into(),
+            1 => "MPN".into(),
+            2 => "Processes".into(),
+            _ => unreachable!(),
+        }
     }
 
     fn is_editable_cell(&mut self, column: usize, _row: usize, _row_value: &PartStatesRow) -> bool {
