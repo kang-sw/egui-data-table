@@ -1,6 +1,6 @@
 use std::mem::{replace, take};
 
-use egui::{Align, Color32, Event, Label, Layout, PointerButton, Rect, Response, RichText, Sense, Stroke, StrokeKind, Widget};
+use egui::{Align, Color32, Event, Label, Layout, PointerButton, Rect, Response, RichText, Sense, Stroke, StrokeKind};
 use egui_extras::Column;
 use tap::prelude::{Pipe, Tap};
 
@@ -170,7 +170,11 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     let vis_col = VisColumnPos(vis_col);
                     let mut painter = None;
                     let (col_rect, resp) = h.col(|ui| {
-                        ui.horizontal_centered(|ui| {
+                        egui::Sides::new().show(ui, |ui| {
+                            ui.add(Label::new(viewer.column_name(col.0))
+                                .selectable(false)
+                            );
+                        }, |ui|{
                             if let Some(pos) = s.sort().iter().position(|(c, ..)| c == &col) {
                                 let is_asc = s.sort()[pos].1 .0 as usize;
 
@@ -186,10 +190,6 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                                 // so that the columns don't resize when sorted.
                                 ui.add(Label::new(RichText::new(" ".repeat(max_sort_indicator_width)).monospace()).selectable(false));
                             }
-
-                            egui::Label::new(viewer.column_name(col.0))
-                                .selectable(false)
-                                .ui(ui);
                         });
 
                         painter = Some(ui.painter().clone());
