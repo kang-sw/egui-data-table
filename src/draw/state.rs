@@ -1047,7 +1047,9 @@ impl<R> UiState<R> {
             Command::SetRowValue(row_id, value) => {
                 self.cc_num_frame_from_last_edit = 0;
                 table.dirty_flag = true;
-                table.rows[row_id.0] = vwr.clone_row(value);
+                table.rows[row_id.0] = vwr.clone_row(value); 
+
+                vwr.on_row_updated(row_id.0, &table.rows[row_id.0]);
             }
             Command::SetCells { slab, values } => {
                 self.cc_num_frame_from_last_edit = 0;
@@ -1056,22 +1058,35 @@ impl<R> UiState<R> {
                 for (row, col, value_id) in values.iter() {
                     vwr.set_cell_value(&slab[value_id.0], &mut table.rows[row.0], col.0);
                 }
+
+                let modified_row_indexes = values.iter().map(|(row, _col, _value_id) |row.0).dedup().collect::<Vec<_>>();
+                for row_index in modified_row_indexes {
+                    vwr.on_row_updated(row_index, &mut table.rows[row_index]);
+                }
             }
             Command::InsertRows(pos, values) => {
-                self.cc_dirty = true; // It invalidates all current `RowId` occurences.
+                self.cc_dirty = true; // It invalidates all current `RowId` occurrences.
                 table.dirty_flag = true;
 
                 table
                     .rows
                     .splice(pos.0..pos.0, values.iter().map(|x| vwr.clone_row(x)));
-
-                self.queue_select_rows((pos.0..pos.0 + values.len()).map(RowIdx));
+                let range = pos.0..pos.0 + values.len();
+                
+                for row_index in range.clone() {
+                    vwr.on_row_inserted(row_index, &mut table.rows[row_index]);
+                }
+                self.queue_select_rows(range.map(RowIdx));
             }
             Command::RemoveRow(values) => {
                 debug_assert!(values.windows(2).all(|x| x[0] < x[1]));
-                self.cc_dirty = true; // It invalidates all current `RowId` occurences.
+                self.cc_dirty = true; // It invalidates all current `RowId` occurrences.
                 table.dirty_flag = true;
 
+                for row_index in values.iter() {
+                    vwr.on_row_removed(row_index.0, &mut table.rows[row_index.0]);
+                }
+                
                 let mut index = 0;
                 table.rows.retain(|_| {
                     let idx_now = index.tap(|_| index += 1);
