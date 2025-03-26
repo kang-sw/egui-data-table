@@ -1,3 +1,10 @@
+//! Demonstrate the partially editable features.
+//! 
+//! Sometimes, some of the data you need to work with is not always editable, this example uses API features
+//! to prevent new rows being added/deleted and to prevent some cells from being edited/cleared or pasted into.
+//!
+//! See [`Viewer::is_editable_cell`], [`Viewer::allow_row_insertions`] and [`Viewer::allow_row_deletions`] 
+
 use egui::{Response, Ui};
 use egui_data_table::RowViewer;
 use std::collections::HashMap;
