@@ -827,6 +827,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
 
         /* ----------------------------------- Event Handling ----------------------------------- */
 
+        // FIXME: Clicking currently editing cell triggers this event.
         if ctx.input(|i| i.pointer.button_released(PointerButton::Primary)) {
             let mods = ctx.input(|i| i.modifiers);
             if let Some(sel) = s.cci_take_selection(mods).filter(|_| !edit_started) {
