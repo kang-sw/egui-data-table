@@ -1,6 +1,6 @@
 [package]
 name = "egui-data-table"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2021"
 repository = "https://github.com/kang-sw/egui-data-table"
 authors = ["kang-sw"]

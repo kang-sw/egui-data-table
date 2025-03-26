@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## [0.6.2]
+
+### Added
+- New viewer API `Viewer::is_editable_cell`, `Viewer::allow_row_insertions`, `Viewer::allow_row_deletions`
+
+### Fixed
+- Now editing cell correctly lose its focus when clicking outside of the table.
+- Now default view of editing cell is correctly hidden.
+
+
 ## [0.6.0]
 
 ### Changed
