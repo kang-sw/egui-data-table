@@ -118,9 +118,10 @@ pub trait RowViewer<R>: 'static {
     /// i.e.
     /// * true to allow editing of a cell
     /// * false to disable editing of a cell
-    fn is_editable_cell(&mut self, column: usize, row: usize) -> bool {
+    fn is_editable_cell(&mut self, column: usize, row: usize, row_value: &R) -> bool {
         let _ = column;
         let _ = row;
+        let _ = row_value;
         true
     }
 
