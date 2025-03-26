@@ -344,7 +344,9 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                                 }
 
                                 if i.modifiers.shift {
-                                    actions.push(UiAction::PasteInsert)
+                                    if viewer.allow_row_insertions() {
+                                        actions.push(UiAction::PasteInsert)
+                                    }
                                 } else {
                                     actions.push(UiAction::PasteInPlace)
                                 }
@@ -651,7 +653,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                         )),
                         None,
                         Some((clip, "➿", "Clipboard: Paste", UiAction::PasteInPlace)),
-                        Some((clip, "🛠", "Clipboard: Insert", UiAction::PasteInsert)),
+                        Some((clip && viewer.allow_row_insertions(), "🛠", "Clipboard: Insert", UiAction::PasteInsert)),
                         None,
                         Some((viewer.allow_row_insertions(), "🗐", "Row: Duplicate", UiAction::DuplicateRow)),
                         Some((viewer.allow_row_deletions(), "🗙", "Row: Delete", UiAction::DeleteRow)),
