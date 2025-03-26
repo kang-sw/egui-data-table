@@ -1,6 +1,7 @@
 use egui::{Response, Ui};
 use egui_data_table::RowViewer;
 use std::collections::HashMap;
+use tap::Tap;
 
 #[derive(
     Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
@@ -130,7 +131,8 @@ impl RowViewer<PartStatesRow> for Viewer {
                             None
                         }
                     })
-                    .collect::<Vec<String>>();
+                    .collect::<Vec<String>>()
+                    .tap_mut(|processes|processes.sort());
                 let label = processes.join(", ");
                 ui.label(label);
             }
