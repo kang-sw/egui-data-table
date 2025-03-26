@@ -113,6 +113,27 @@ pub trait RowViewer<R>: 'static {
         false
     }
 
+    /// Returns if a given cell is 'editable'.
+    /// 
+    /// i.e.
+    /// * true to allow editing of a cell
+    /// * false to disable editing of a cell
+    fn is_editable_cell(&mut self, column: usize, row: usize) -> bool {
+        let _ = column;
+        let _ = row;
+        true
+    }
+
+    /// Returns if row insertions are allowed.
+    fn allow_row_insertions(&mut self) -> bool {
+        true
+    }
+
+    /// Returns if row deletions are allowed.
+    fn allow_row_deletions(&mut self) -> bool {
+        true
+    }
+
     /// Compare two column contents for sort.
     fn compare_cell(&self, row_a: &R, row_b: &R, column: usize) -> std::cmp::Ordering {
         let _ = (row_a, row_b, column);

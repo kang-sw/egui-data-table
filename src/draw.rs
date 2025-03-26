@@ -344,7 +344,9 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                                 }
 
                                 if i.modifiers.shift {
-                                    actions.push(UiAction::PasteInsert)
+                                    if viewer.allow_row_insertions() {
+                                        actions.push(UiAction::PasteInsert)
+                                    }
                                 } else {
                                     actions.push(UiAction::PasteInPlace)
                                 }
@@ -588,8 +590,10 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     s.cci_sel_update(linear_index);
                 }
 
-                if resp.clicked_by(PointerButton::Primary)
-                    && (self.style.single_click_edit_mode || is_interactive_cell)
+                let editable = viewer.is_editable_cell(vis_col.0, vis_row.0);
+                
+                if editable && (resp.clicked_by(PointerButton::Primary)
+                    && (self.style.single_click_edit_mode || is_interactive_cell))
                 {
                     response_consumed = true;
                     commands.push(Command::CcEditStart(
@@ -649,10 +653,10 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                         )),
                         None,
                         Some((clip, "➿", "Clipboard: Paste", UiAction::PasteInPlace)),
-                        Some((clip, "🛠", "Clipboard: Insert", UiAction::PasteInsert)),
+                        Some((clip && viewer.allow_row_insertions(), "🛠", "Clipboard: Insert", UiAction::PasteInsert)),
                         None,
-                        Some((true, "🗐", "Row: Duplicate", UiAction::DuplicateRow)),
-                        Some((true, "🗙", "Row: Delete", UiAction::DeleteRow)),
+                        Some((viewer.allow_row_insertions(), "🗐", "Row: Duplicate", UiAction::DuplicateRow)),
+                        Some((viewer.allow_row_deletions(), "🗙", "Row: Delete", UiAction::DeleteRow)),
                         None,
                         Some((b_undo, "⎗", "Undo", UiAction::Undo)),
                         Some((b_redo, "⎘", "Redo", UiAction::Redo)),

@@ -911,12 +911,18 @@ impl<R> UiState<R> {
                 let mut values = values.to_vec();
 
                 values.retain(|(row, col, slab_id)| {
-                    vwr.confirm_cell_write_by_ui(
-                        &table.rows[row.0],
-                        &slab[slab_id.0],
-                        col.0,
-                        context,
-                    )
+                    
+                    if vwr.is_editable_cell(col.0, row.0) {
+                        vwr.confirm_cell_write_by_ui(
+                            &table.rows[row.0],
+                            &slab[slab_id.0],
+                            col.0,
+                            context,
+                        )
+                    } else {
+                        false
+                    }
+                    
                 });
 
                 return self.push_new_command(
@@ -1205,24 +1211,34 @@ impl<R> UiState<R> {
             UiAction::SelectionStartEditing => {
                 let row_id = self.cc_rows[ic_r.0];
                 let row = vwr.clone_row(&table.rows[row_id.0]);
-                vec![Command::CcEditStart(row_id, ic_c, Box::new(row))]
+                if vwr.is_editable_cell(ic_c.0, ic_r.0) {
+                    vec![Command::CcEditStart(row_id, ic_c, Box::new(row))]
+                } else {
+                    vec![]
+                }
             }
             UiAction::CancelEdition => vec![Command::CcCancelEdit],
             UiAction::CommitEdition => vec![Command::CcCommitEdit],
             UiAction::CommitEditionAndMove(dir) => {
                 let pos = self.moved_position(self.cc_interactive_cell, dir);
                 let (r, c) = pos.row_col(self.p.vis_cols.len());
-                let row_id = self.cc_rows[r.0];
-                let row_value = if self.is_editing() && ic_r == r {
-                    vwr.clone_row(self.unwrap_editing_row_data())
-                } else {
-                    vwr.clone_row(&table.rows[row_id.0])
-                };
 
-                vec![
+                let mut commands = vec![
                     Command::CcCommitEdit,
-                    Command::CcEditStart(row_id, c, row_value.into()),
-                ]
+                ];
+                
+                if vwr.is_editable_cell(c.0, r.0) {
+                    let row_id = self.cc_rows[r.0];
+                    let row_value = if self.is_editing() && ic_r == r {
+                        vwr.clone_row(self.unwrap_editing_row_data())
+                    } else {
+                        vwr.clone_row(&table.rows[row_id.0])
+                    };
+                    
+                    commands.push(Command::CcEditStart(row_id, c, row_value.into()));
+                }
+                
+                commands
             }
             UiAction::MoveSelection(dir) => {
                 let pos = self.moved_position(self.cc_interactive_cell, dir);
@@ -1352,20 +1368,24 @@ impl<R> UiState<R> {
                 vec![Command::InsertRows(pos, row_values)]
             }
             UiAction::DuplicateRow => {
-                let rows = self
-                    .collect_selected_rows()
-                    .into_iter()
-                    .map(|x| self.cc_rows[x.0])
-                    .map(|r| vwr.clone_row_for_insertion(&table.rows[r.0]))
-                    .collect();
+                if vwr.allow_row_insertions() {
+                    let rows = self
+                        .collect_selected_rows()
+                        .into_iter()
+                        .map(|x| self.cc_rows[x.0])
+                        .map(|r| vwr.clone_row_for_insertion(&table.rows[r.0]))
+                        .collect();
 
-                let pos = if self.p.sort.is_empty() {
-                    self.cc_rows[ic_r.0]
+                    let pos = if self.p.sort.is_empty() {
+                        self.cc_rows[ic_r.0]
+                    } else {
+                        RowIdx(table.rows.len())
+                    };
+
+                    vec![Command::InsertRows(pos, rows)]
                 } else {
-                    RowIdx(table.rows.len())
-                };
-
-                vec![Command::InsertRows(pos, rows)]
+                    vec![]
+                }
             }
             UiAction::DeleteSelection => {
                 let default = vwr.new_empty_row_for(EmptyRowCreateContext::DeletionDefault);
@@ -1382,14 +1402,18 @@ impl<R> UiState<R> {
                 }]
             }
             UiAction::DeleteRow => {
-                let rows = self
-                    .collect_selected_rows()
-                    .into_iter()
-                    .map(|x| self.cc_rows[x.0])
-                    .filter(|row| vwr.confirm_row_deletion_by_ui(&table.rows[row.0]))
-                    .collect();
+                if vwr.allow_row_deletions() {
+                    let rows = self
+                        .collect_selected_rows()
+                        .into_iter()
+                        .map(|x| self.cc_rows[x.0])
+                        .filter(|row| vwr.confirm_row_deletion_by_ui(&table.rows[row.0]))
+                        .collect();
 
-                vec![Command::RemoveRow(rows)]
+                    vec![Command::RemoveRow(rows)]
+                } else {
+                    vec![]
+                }
             }
             UiAction::SelectAll => {
                 if self.cc_rows.is_empty() {
