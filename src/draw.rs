@@ -588,8 +588,10 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     s.cci_sel_update(linear_index);
                 }
 
-                if resp.clicked_by(PointerButton::Primary)
-                    && (self.style.single_click_edit_mode || is_interactive_cell)
+                let editable = viewer.is_editable_cell(vis_col.0, vis_row.0);
+                
+                if editable && (resp.clicked_by(PointerButton::Primary)
+                    && (self.style.single_click_edit_mode || is_interactive_cell))
                 {
                     response_consumed = true;
                     commands.push(Command::CcEditStart(

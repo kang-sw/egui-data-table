@@ -1205,24 +1205,34 @@ impl<R> UiState<R> {
             UiAction::SelectionStartEditing => {
                 let row_id = self.cc_rows[ic_r.0];
                 let row = vwr.clone_row(&table.rows[row_id.0]);
-                vec![Command::CcEditStart(row_id, ic_c, Box::new(row))]
+                if vwr.is_editable_cell(ic_c.0, ic_r.0) {
+                    vec![Command::CcEditStart(row_id, ic_c, Box::new(row))]
+                } else {
+                    vec![]
+                }
             }
             UiAction::CancelEdition => vec![Command::CcCancelEdit],
             UiAction::CommitEdition => vec![Command::CcCommitEdit],
             UiAction::CommitEditionAndMove(dir) => {
                 let pos = self.moved_position(self.cc_interactive_cell, dir);
                 let (r, c) = pos.row_col(self.p.vis_cols.len());
-                let row_id = self.cc_rows[r.0];
-                let row_value = if self.is_editing() && ic_r == r {
-                    vwr.clone_row(self.unwrap_editing_row_data())
-                } else {
-                    vwr.clone_row(&table.rows[row_id.0])
-                };
 
-                vec![
+                let mut commands = vec![
                     Command::CcCommitEdit,
-                    Command::CcEditStart(row_id, c, row_value.into()),
-                ]
+                ];
+                
+                if vwr.is_editable_cell(c.0, r.0) {
+                    let row_id = self.cc_rows[r.0];
+                    let row_value = if self.is_editing() && ic_r == r {
+                        vwr.clone_row(self.unwrap_editing_row_data())
+                    } else {
+                        vwr.clone_row(&table.rows[row_id.0])
+                    };
+                    
+                    commands.push(Command::CcEditStart(row_id, c, row_value.into()));
+                }
+                
+                commands
             }
             UiAction::MoveSelection(dir) => {
                 let pos = self.moved_position(self.cc_interactive_cell, dir);
