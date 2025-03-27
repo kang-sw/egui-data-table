@@ -15,6 +15,7 @@ use crate::{
 use self::state::*;
 
 use format as f;
+use std::sync::Arc;
 
 pub(crate) mod state;
 mod tsv;
@@ -66,6 +67,7 @@ pub struct Renderer<'a, R, V: RowViewer<R>> {
     viewer: &'a mut V,
     state: Option<Box<UiState<R>>>,
     style: Style,
+    translator: Arc<dyn Translator>
 }
 
 impl<R, V: RowViewer<R>> egui::Widget for Renderer<'_, R, V> {
@@ -87,6 +89,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
             table,
             viewer,
             style: Default::default(),
+            translator: Arc::new(EnglishTranslator::default()),
         }
     }
 
@@ -107,6 +110,31 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
 
     pub fn with_max_undo_history(mut self, max_undo_history: usize) -> Self {
         self.style.max_undo_history = max_undo_history;
+        self
+    }
+
+    /// Sets a custom translator for the instance.
+    /// # Example
+    ///
+    /// ```
+    /// // Define a simple translator
+    /// struct EsEsTranslator;
+    /// impl Translator for EsEsTranslator {
+    ///     fn translate(&self, key: &str) -> String {
+    ///         match key {
+    ///             "hello" => "Hola".to_string(),
+    ///             "world" => "Mundo".to_string(),
+    ///             _ => key.to_string(),
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// let renderer = Renderer::new(&mut table, &mut viewer)
+    ///     .with_translator(Arc::new(EsEsTranslator));
+    /// ```
+    #[cfg(not(doctest))]
+    pub fn with_translator(mut self, translator: Arc<dyn Translator>) -> Self {
+        self.translator = translator;
         self
     }
 
@@ -252,19 +280,19 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     }
 
                     resp.context_menu(|ui| {
-                        if ui.button("Hide").clicked() {
+                        if ui.button(self.translator.translate("context-menu-hide")).clicked() {
                             commands.push(Command::CcHideColumn(col));
                             ui.close_menu();
                         }
 
-                        if !s.sort().is_empty() && ui.button("Clear Sort").clicked() {
+                        if !s.sort().is_empty() && ui.button(self.translator.translate("context-menu-clear-sort")).clicked() {
                             commands.push(Command::SetColumnSort(Vec::new()));
                             ui.close_menu();
                         }
 
                         if has_any_hidden_col {
                             ui.separator();
-                            ui.label("Hidden");
+                            ui.label(self.translator.translate("context-menu-hidden"));
 
                             for col in (0..s.num_columns()).map(ColumnIdx) {
                                 if !s.vis_cols().contains(&col)
@@ -645,43 +673,43 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     let mut draw_sep = false;
 
                     let context_menu_items = [
-                        Some((selected, "🖻", "Selection: Copy", UiAction::CopySelection)),
-                        Some((selected, "🖻", "Selection: Cut", UiAction::CutSelection)),
-                        Some((selected, "🗙", "Selection: Clear", UiAction::DeleteSelection)),
+                        Some((selected, "🖻", "context-menu-selection-copy", UiAction::CopySelection)),
+                        Some((selected, "🖻", "context-menu-selection-cut", UiAction::CutSelection)),
+                        Some((selected, "🗙", "context-menu-selection-clear", UiAction::DeleteSelection)),
                         Some((
                             sel_multi_row,
                             "🗐",
-                            "Selection: Fill",
+                            "context-menu-selection-fill",
                             UiAction::SelectionDuplicateValues,
                         )),
                         None,
-                        Some((clip, "➿", "Clipboard: Paste", UiAction::PasteInPlace)),
+                        Some((clip, "➿", "context-menu-clipboard-paste", UiAction::PasteInPlace)),
                         Some((
                             clip && viewer.allow_row_insertions(),
                             "🛠",
-                            "Clipboard: Insert",
+                            "context-menu-clipboard-insert",
                             UiAction::PasteInsert,
                         )),
                         None,
                         Some((
                             viewer.allow_row_insertions(),
                             "🗐",
-                            "Row: Duplicate",
+                            "context-menu-row-duplicate",
                             UiAction::DuplicateRow,
                         )),
                         Some((
                             viewer.allow_row_deletions(),
                             "🗙",
-                            "Row: Delete",
+                            "context-menu-row-delete",
                             UiAction::DeleteRow,
                         )),
                         None,
-                        Some((b_undo, "⎗", "Undo", UiAction::Undo)),
-                        Some((b_redo, "⎘", "Redo", UiAction::Redo)),
+                        Some((b_undo, "⎗", "context-menu-undo", UiAction::Undo)),
+                        Some((b_redo, "⎘", "context-menu-redo", UiAction::Redo)),
                     ];
 
                     context_menu_items.map(|opt| {
-                        if let Some((icon, label, action)) =
+                        if let Some((icon, key, action)) =
                             opt.filter(|x| x.0).map(|x| (x.1, x.2, x.3))
                         {
                             if draw_sep {
@@ -697,6 +725,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                                 ui.monospace(icon);
                                 ui.add_space(cursor_x + 20. - ui.cursor().min.x);
 
+                                let label = self.translator.translate(key);
                                 let btn = egui::Button::new(label)
                                     .shortcut_text(hotkey.unwrap_or_else(|| "🗙".into()));
                                 let r = ui.centered_and_justified(|ui| ui.add(btn)).inner;
@@ -866,5 +895,42 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
 impl<R, V: RowViewer<R>> Drop for Renderer<'_, R, V> {
     fn drop(&mut self) {
         self.table.ui = self.state.take();
+    }
+}
+
+/* ------------------------------------------- Translations ------------------------------------- */
+
+pub trait Translator {
+
+    /// Translates a given key into its corresponding string representation.
+    ///
+    /// If the translation key is unknown, return the key as a [`String`]
+    fn translate(&self, key: &str) -> String;
+}
+
+#[derive(Default)]
+pub struct EnglishTranslator {}
+
+impl Translator for EnglishTranslator {
+    fn translate(&self, key: &str) -> String {
+        match key {
+            // cell context menu
+            "context-menu-selection-copy" => "Selection: Copy",
+            "context-menu-selection-cut" => "Selection: Cut",
+            "context-menu-selection-clear" => "Selection: Clear",
+            "context-menu-selection-fill" => "Selection: Fill",
+            "context-menu-clipboard-paste" => "Clipboard: Paste",
+            "context-menu-clipboard-insert" => "Clipboard: Insert",
+            "context-menu-row-duplicate" => "Row: Duplicate",
+            "context-menu-row-delete" => "Row: Delete",
+            "context-menu-undo" => "Undo",
+            "context-menu-redo" => "Redo",
+
+            // column header context menu
+            "context-menu-hide" => "Hide",
+            "context-menu-hidden" => "Hidden",
+            "context-menu-clear-sort" => "Clear sort",
+            _ => key,
+        }.to_string()
     }
 }
