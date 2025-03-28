@@ -1,6 +1,15 @@
+//! Demonstrate the partially editable features.
+//! 
+//! Sometimes, some of the data you need to work with is not always editable, this example uses API features
+//! to prevent new rows being added/deleted and to prevent some cells from being edited/cleared or pasted into.
+//!
+//! See [`Viewer::is_editable_cell`], [`Viewer::allow_row_insertions`] and [`Viewer::allow_row_deletions`] 
+
+use std::borrow::Cow;
 use egui::{Response, Ui};
 use egui_data_table::RowViewer;
 use std::collections::HashMap;
+use tap::Tap;
 
 #[derive(
     Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
@@ -94,7 +103,16 @@ impl RowViewer<PartStatesRow> for Viewer {
         3
     }
 
-    fn is_editable_cell(&mut self, column: usize, _row: usize) -> bool {
+    fn column_name(&mut self, column: usize) -> Cow<'static, str> {
+        match column {
+            0 => "Manufacturer".into(),
+            1 => "MPN".into(),
+            2 => "Processes".into(),
+            _ => unreachable!(),
+        }
+    }
+
+    fn is_editable_cell(&mut self, column: usize, _row: usize, _row_value: &PartStatesRow) -> bool {
         match column {
             0 => false,
             1 => false,
@@ -130,7 +148,8 @@ impl RowViewer<PartStatesRow> for Viewer {
                             None
                         }
                     })
-                    .collect::<Vec<String>>();
+                    .collect::<Vec<String>>()
+                    .tap_mut(|processes|processes.sort());
                 let label = processes.join(", ");
                 ui.label(label);
             }

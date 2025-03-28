@@ -16,7 +16,7 @@ struct Viewer {
 }
 
 #[derive(Debug, Clone)]
-struct Row(String, i32, bool, Grade);
+struct Row(String, i32, bool, Grade, bool);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Grade {
@@ -44,6 +44,7 @@ impl RowCodec<Row> for Codec {
                 Grade::C => "C",
                 Grade::F => "F",
             }),
+            4 => dst.push_str(&src_row.4.to_string()),
             _ => unreachable!(),
         }
     }
@@ -67,6 +68,7 @@ impl RowCodec<Row> for Codec {
                     _ => return Err(DecodeErrorBehavior::SkipRow),
                 }
             }
+            4 => dst_row.4 = src_data.parse().map_err(|_| DecodeErrorBehavior::SkipRow)?,
             _ => unreachable!(),
         }
 
@@ -74,7 +76,7 @@ impl RowCodec<Row> for Codec {
     }
 
     fn create_empty_decoded_row(&mut self) -> Row {
-        Row("".to_string(), 0, false, Grade::F)
+        Row("".to_string(), 0, false, Grade::F, false)
     }
 }
 
@@ -86,7 +88,7 @@ impl RowViewer<Row> for Viewer {
     }
 
     fn num_columns(&mut self) -> usize {
-        4
+        5
     }
 
     fn column_name(&mut self, column: usize) -> Cow<'static, str> {
@@ -95,12 +97,22 @@ impl RowViewer<Row> for Viewer {
             "Age",
             "Is Student (Not sortable)",
             "Grade",
+            "Row locked",
         ][column]
             .into()
     }
 
     fn is_sortable_column(&mut self, column: usize) -> bool {
-        [true, true, false, true][column]
+        [true, true, false, true, true][column]
+    }
+
+    fn is_editable_cell(&mut self, _column: usize, _row: usize, row_value: &Row) -> bool {
+        let locked = row_value.4;
+        // allow editing of the locked flag, but prevent editing other columns when locked.
+        match _column {
+            4 => true,
+            _ => !locked,
+        }
     }
 
     fn compare_cell(&self, row_l: &Row, row_r: &Row, column: usize) -> std::cmp::Ordering {
@@ -109,12 +121,13 @@ impl RowViewer<Row> for Viewer {
             1 => row_l.1.cmp(&row_r.1),
             2 => unreachable!(),
             3 => row_l.3.cmp(&row_r.3),
+            4 => row_l.4.cmp(&row_r.4),
             _ => unreachable!(),
         }
     }
 
     fn new_empty_row(&mut self) -> Row {
-        Row("".to_string(), 0, false, Grade::F)
+        Row("".to_string(), 0, false, Grade::F, false)
     }
 
     fn set_cell_value(&mut self, src: &Row, dst: &mut Row, column: usize) {
@@ -123,6 +136,7 @@ impl RowViewer<Row> for Viewer {
             1 => dst.1 = src.1,
             2 => dst.2 = src.2,
             3 => dst.3 = src.3,
+            4 => dst.4 = src.4,
             _ => unreachable!(),
         }
     }
@@ -160,6 +174,7 @@ impl RowViewer<Row> for Viewer {
                 Grade::C => "C",
                 Grade::F => "F",
             }),
+            4 => ui.checkbox(&mut { row.4 }, ""),
 
             _ => unreachable!(),
         };
@@ -172,7 +187,7 @@ impl RowViewer<Row> for Viewer {
         resp: &egui::Response,
     ) -> Option<Box<Row>> {
         resp.dnd_release_payload::<String>()
-            .map(|x| Box::new(Row((*x).clone(), 9999, false, Grade::A)))
+            .map(|x| Box::new(Row((*x).clone(), 9999, false, Grade::A, false)))
     }
 
     fn show_cell_editor(
@@ -201,6 +216,7 @@ impl RowViewer<Row> for Viewer {
                 })
                 .inner
             }
+            4 => ui.checkbox(&mut row.4, ""),
             _ => unreachable!(),
         }
         .into()
@@ -259,6 +275,7 @@ impl Default for DemoApp {
                             2 => Grade::C,
                             _ => Grade::F,
                         },
+                        false,
                     )
                 })
             }
@@ -311,7 +328,7 @@ impl eframe::App for DemoApp {
                     .dnd_set_drag_payload(String::from("Hallo~"));
 
                 egui::menu::menu_button(ui, "🎌 Flags", |ui| {
-                    ui.checkbox(&mut self.viewer.row_protection, "Row Proection")
+                    ui.checkbox(&mut self.viewer.row_protection, "Row Protection")
                         .on_hover_text(
                             "If checked, any rows `Is Student` marked \
                         won't be deleted or overwritten by UI actions.",

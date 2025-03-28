@@ -912,7 +912,7 @@ impl<R> UiState<R> {
 
                 values.retain(|(row, col, slab_id)| {
                     
-                    if vwr.is_editable_cell(col.0, row.0) {
+                    if vwr.is_editable_cell(col.0, row.0, &table.rows[row.0]) {
                         vwr.confirm_cell_write_by_ui(
                             &table.rows[row.0],
                             &slab[slab_id.0],
@@ -1210,8 +1210,9 @@ impl<R> UiState<R> {
         match action {
             UiAction::SelectionStartEditing => {
                 let row_id = self.cc_rows[ic_r.0];
-                let row = vwr.clone_row(&table.rows[row_id.0]);
-                if vwr.is_editable_cell(ic_c.0, ic_r.0) {
+                let src_row = &table.rows[row_id.0];
+                if vwr.is_editable_cell(ic_c.0, ic_r.0, &src_row) {
+                    let row = vwr.clone_row(src_row);
                     vec![Command::CcEditStart(row_id, ic_c, Box::new(row))]
                 } else {
                     vec![]
@@ -1227,8 +1228,8 @@ impl<R> UiState<R> {
                     Command::CcCommitEdit,
                 ];
                 
-                if vwr.is_editable_cell(c.0, r.0) {
-                    let row_id = self.cc_rows[r.0];
+                let row_id = self.cc_rows[r.0];
+                if vwr.is_editable_cell(c.0, r.0, &table.rows[row_id.0]) {
                     let row_value = if self.is_editing() && ic_r == r {
                         vwr.clone_row(self.unwrap_editing_row_data())
                     } else {

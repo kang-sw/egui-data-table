@@ -592,7 +592,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     s.cci_sel_update(linear_index);
                 }
 
-                let editable = viewer.is_editable_cell(vis_col.0, vis_row.0);
+                let editable = viewer.is_editable_cell(vis_col.0, vis_row.0, &table.rows[row_id.0]);
 
                 if editable
                     && (resp.clicked_by(PointerButton::Primary)
@@ -731,9 +731,15 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     if let Some(new_value) =
                         viewer.on_cell_view_response(&table.rows[row_id.0], col.0, &resp)
                     {
+                        let mut values = vec![(row_id, *col, RowSlabIndex(0))];
+
+                        values.retain(|(row, col, _slab_id)| {
+                            viewer.is_editable_cell(col.0, row.0, &table.rows[row.0])
+                        });
+
                         commands.push(Command::SetCells {
                             slab: vec![*new_value].into_boxed_slice(),
-                            values: vec![(row_id, *col, RowSlabIndex(0))].into_boxed_slice(),
+                            values: values.into_boxed_slice(),
                         });
                     }
                 }
