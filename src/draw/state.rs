@@ -1047,21 +1047,25 @@ impl<R> UiState<R> {
             Command::SetRowValue(row_id, value) => {
                 self.cc_num_frame_from_last_edit = 0;
                 table.dirty_flag = true;
+                let old_row = vwr.clone_row(&table.rows[row_id.0]);
                 table.rows[row_id.0] = vwr.clone_row(value); 
 
-                vwr.on_row_updated(row_id.0, &table.rows[row_id.0]);
+                vwr.on_row_updated(row_id.0, &table.rows[row_id.0], &old_row);
             }
             Command::SetCells { slab, values } => {
                 self.cc_num_frame_from_last_edit = 0;
                 table.dirty_flag = true;
 
+                let mut modified_rows: HashMap<RowIdx, R> = HashMap::new();
+                
                 for (row, col, value_id) in values.iter() {
+                    let _ = modified_rows.entry(row.clone()).or_insert_with(|| vwr.clone_row(&table.rows[row.0]));
+                    
                     vwr.set_cell_value(&slab[value_id.0], &mut table.rows[row.0], col.0);
                 }
 
-                let modified_row_indexes = values.iter().map(|(row, _col, _value_id) |row.0).dedup().collect::<Vec<_>>();
-                for row_index in modified_row_indexes {
-                    vwr.on_row_updated(row_index, &mut table.rows[row_index]);
+                for (row, old_row) in modified_rows.iter() {
+                    vwr.on_row_updated(row.0, &mut table.rows[row.0], old_row);
                 }
             }
             Command::InsertRows(pos, values) => {

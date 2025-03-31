@@ -245,8 +245,8 @@ pub trait RowViewer<R>: 'static {
     }
     
     /// Called when a row is updated, including when undoing/redoing
-    fn on_row_updated(&mut self, row_index: usize, row: &R) {
-        let (_, _) = (row_index, row);
+    fn on_row_updated(&mut self, row_index: usize, new_row: &R, old_row: &R) {
+        let (_, _, _) = (row_index, new_row, old_row);
     }
 
     /// Called when a row has been inserted, including when undoing/redoing
