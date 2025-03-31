@@ -247,6 +247,18 @@ impl RowViewer<Row> for Viewer {
         info!("highlight {:?}", highlighted);
         info!("unhighlight {:?}", unhighlighted);
     }
+
+    fn on_row_updated(&mut self, row_index: usize, new_row: &Row, old_row: &Row) {
+        println!("row updated. row_id: {}, new_row: {:?}, old_row: {:?}", row_index, new_row, old_row);
+    }
+    
+    fn on_row_inserted(&mut self, row_index: usize, row: &Row) {
+        println!("row inserted. row_id: {}, values: {:?}", row_index, row);
+    }
+
+    fn on_row_removed(&mut self, row_index: usize, row: &Row) {
+        println!("row removed. row_id: {}, values: {:?}", row_index, row);
+    }
 }
 
 /* ------------------------------------------ View Loop ----------------------------------------- */
