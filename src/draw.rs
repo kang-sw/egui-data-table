@@ -13,6 +13,7 @@ use self::state::*;
 
 use format as f;
 use std::sync::Arc;
+use egui::scroll_area::ScrollBarVisibility;
 
 pub(crate) mod state;
 mod tsv;
@@ -58,6 +59,9 @@ pub struct Style {
 
     /// See [`ScrollArea::auto_shrink`] for details.
     pub auto_shrink: Vec2b,
+
+    /// See ['ScrollArea::ScrollBarVisibility`] for details.
+    pub scroll_bar_visibility: ScrollBarVisibility,
 }
 
 /* ------------------------------------------ Rendering ----------------------------------------- */
@@ -190,6 +194,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
             .cell_layout(egui::Layout::default().with_cross_align(self.style.cell_align))
             .max_scroll_height(f32::MAX)
             .auto_shrink(self.style.auto_shrink)
+            .scroll_bar_visibility(self.style.scroll_bar_visibility)
             .sense(Sense::click_and_drag().tap_mut(|s| s.set(Sense::FOCUSABLE, true)))
             .header(20., |mut h| {
                 h.col(|_ui| {
