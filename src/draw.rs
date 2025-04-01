@@ -1,6 +1,6 @@
 use std::mem::{replace, take};
 
-use egui::{Align, Color32, Event, Label, Layout, PointerButton, Rect, Response, RichText, Sense, Stroke, StrokeKind};
+use egui::{Align, Color32, Event, Label, Layout, PointerButton, Rect, Response, RichText, Sense, Stroke, StrokeKind, Vec2b};
 use egui_extras::Column;
 use tap::prelude::{Pipe, Tap};
 
@@ -55,6 +55,9 @@ pub struct Style {
     /// Color to use for the stroke above/below focused row.
     /// If `None`, defaults to a darkened `warn_fg_color`.
     pub focused_row_stroke: Option<egui::Color32>,
+
+    /// See [`ScrollArea::auto_shrink`] for details.
+    pub auto_shrink: Vec2b,
 }
 
 /* ------------------------------------------ Rendering ----------------------------------------- */
@@ -186,6 +189,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
             .striped(true)
             .cell_layout(egui::Layout::default().with_cross_align(self.style.cell_align))
             .max_scroll_height(f32::MAX)
+            .auto_shrink(self.style.auto_shrink)
             .sense(Sense::click_and_drag().tap_mut(|s| s.set(Sense::FOCUSABLE, true)))
             .header(20., |mut h| {
                 h.col(|_ui| {

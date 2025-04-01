@@ -340,6 +340,15 @@ impl eframe::App for DemoApp {
                     )
                     .on_hover_text("If checked, cells will be edited with a single click.");
 
+                    ui.checkbox(
+                        &mut self.style_override.auto_shrink.x,
+                        "Auto-shrink X",
+                    );
+                    ui.checkbox(
+                        &mut self.style_override.auto_shrink.y,
+                        "Auto-shrink Y",
+                    );
+
                     if ui.button("Shuffle Rows").clicked() {
                         fastrand::shuffle(&mut self.table);
                     }
