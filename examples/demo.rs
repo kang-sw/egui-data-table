@@ -376,6 +376,20 @@ impl eframe::App for DemoApp {
             })
         });
 
+        egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
+            egui::Sides::new().show(ui, |_ui| {
+            }, |ui|{
+                let mut has_modifications = self.table.has_user_modification();
+                ui.add_enabled(false, egui::Checkbox::new(&mut has_modifications, "Has modifications"));
+
+                ui.add_enabled_ui(has_modifications, |ui| {
+                    if ui.button("Clear").clicked() {
+                        self.table.clear_user_modification_flag();
+                    }
+                });
+            });
+        });
+        
         egui::SidePanel::left("Hotkeys")
             .default_width(500.)
             .show(ctx, |ui| {
