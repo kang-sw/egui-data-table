@@ -1,6 +1,7 @@
 use std::{borrow::Cow, iter::repeat_with};
 
 use egui::{Response, Sense, Widget};
+use egui::scroll_area::ScrollBarVisibility;
 use egui_data_table::{
     viewer::{default_hotkeys, CellWriteContext, DecodeErrorBehavior, RowCodec, UiActionContext},
     RowViewer,
@@ -267,6 +268,7 @@ struct DemoApp {
     table: egui_data_table::DataTable<Row>,
     viewer: Viewer,
     style_override: egui_data_table::Style,
+    scroll_bar_always_visible: bool,
 }
 
 impl Default for DemoApp {
@@ -299,6 +301,7 @@ impl Default for DemoApp {
                 row_protection: false,
             },
             style_override: Default::default(),
+            scroll_bar_always_visible: false,
         }
     }
 }
@@ -352,6 +355,20 @@ impl eframe::App for DemoApp {
                     )
                     .on_hover_text("If checked, cells will be edited with a single click.");
 
+                    ui.checkbox(
+                        &mut self.style_override.auto_shrink.x,
+                        "Auto-shrink X",
+                    );
+                    ui.checkbox(
+                        &mut self.style_override.auto_shrink.y,
+                        "Auto-shrink Y",
+                    );
+
+                    ui.checkbox(
+                        &mut self.scroll_bar_always_visible,
+                        "Scrollbar always visible",
+                    );
+
                     if ui.button("Shuffle Rows").clicked() {
                         fastrand::shuffle(&mut self.table);
                     }
@@ -378,6 +395,17 @@ impl eframe::App for DemoApp {
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            match self.scroll_bar_always_visible {
+                true => {
+                    ui.style_mut().spacing.scroll = egui::style::ScrollStyle::solid();
+                    self.style_override.scroll_bar_visibility = ScrollBarVisibility::AlwaysVisible;
+                },
+                false => {
+                    ui.style_mut().spacing.scroll = egui::style::ScrollStyle::floating();
+                    self.style_override.scroll_bar_visibility = ScrollBarVisibility::VisibleWhenNeeded;
+                }
+            };
+
             ui.add(
                 egui_data_table::Renderer::new(&mut self.table, &mut self.viewer)
                     .with_style(self.style_override),
