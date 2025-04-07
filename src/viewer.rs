@@ -243,6 +243,21 @@ pub trait RowViewer<R>: 'static {
     fn on_highlight_change(&mut self, highlighted: &[&R], unhighlighted: &[&R]) {
         let (_, _) = (highlighted, unhighlighted);
     }
+    
+    /// Called when a row is updated, including when undoing/redoing
+    fn on_row_updated(&mut self, row_index: usize, new_row: &R, old_row: &R) {
+        let (_, _, _) = (row_index, new_row, old_row);
+    }
+
+    /// Called when a row has been inserted, including when undoing/redoing
+    fn on_row_inserted(&mut self, row_index: usize, row: &R) {
+        let (_, _) = (row_index, row);
+    }
+
+    /// Called when a row has been removed, including when undoing/redoing
+    fn on_row_removed(&mut self, row_index: usize, row: &R) {
+        let (_, _) = (row_index, row);
+    }
 
     /// Return hotkeys for the current context.
     fn hotkeys(&mut self, context: &UiActionContext) -> Vec<(egui::KeyboardShortcut, UiAction)> {
