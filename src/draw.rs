@@ -75,7 +75,7 @@ impl<R, V: RowViewer<R>> egui::Widget for Renderer<'_, R, V> {
 
 impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
     pub fn new(table: &'a mut DataTable<R>, viewer: &'a mut V) -> Self {
-        if table.rows.is_empty() {
+        if table.rows.is_empty() && viewer.allow_row_insertions() {
             table.push(viewer.new_empty_row_for(EmptyRowCreateContext::InsertNewLine));
         }
 
