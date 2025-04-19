@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+## [0.7.0]
+
+### Added
+- Translator/i18n support with a new `internationalization.rs` example.
+- New demo features:
+  - "Has modifications" checkbox and button to clear the state.
+  - Column headers in the `partially_editable` example.
+- Module-level documentation for the `partially_editable` example.
+- Expanded `is_editable_cell` API to allow row-based cell editability checks, demonstrated with a "locked" column in the demo.
+
+### Changed
+- Improved `on_row_updated` API to pass old and new row values for change detection.
+- Moved sort indicator to the right for better readability and alignment.
+- Improved partial editing support.
+- Ensured consistent sorting of values in the "processes" column.
+
+### Fixed
+- Prevented drag-and-drop onto non-editable cells.
+- Fixed placeholder width for the sort indicator to handle multi-character indicators.
+- Fixed a typo in the "Row protection" checkbox in the demo.
+
+### Exposed
+- Auto-shrink settings and scroll bar visibility in the API and demo.
+
+### Prevented
+- New row insertion when the table is empty and row insertion is disabled.
+
 ## [0.6.2]
 
 ### Added
