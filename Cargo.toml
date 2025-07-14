@@ -1,7 +1,7 @@
 [package]
 name = "egui-data-table"
 version = "0.8.0"
-edition = "2021"
+edition = "2024"
 repository = "https://github.com/kang-sw/egui-data-table"
 authors = ["kang-sw"]
 description = "A generic data table widget implmentation for egui"
