@@ -1,6 +1,6 @@
 use std::mem::{replace, take};
 
-use egui::{Align, Color32, Event, Label, Layout, PointerButton, Rect, Response, RichText, Sense, Stroke, StrokeKind, Vec2b};
+use egui::{Align, Color32, Event, Label, Layout, PointerButton, PopupAnchor, Rect, Response, RichText, Sense, Stroke, StrokeKind, Tooltip, Vec2b};
 use egui_extras::Column;
 use tap::prelude::{Pipe, Tap};
 
@@ -236,12 +236,12 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     resp.dnd_set_drag_payload(vis_col);
 
                     if resp.dragged() {
-                        egui::popup::show_tooltip_text(
-                            ctx,
-                            ui_layer_id,
-                            "_EGUI_DATATABLE__COLUMN_MOVE__".into(),
-                            viewer.column_name(col.0),
-                        );
+                        Tooltip::always_open(ctx.clone(), ui_layer_id, "_EGUI_DATATABLE__COLUMN_MOVE__".into(), PopupAnchor::Pointer)
+                            .gap(12.0)
+                            .show(|ui|{
+                                let colum_name = viewer.column_name(col.0);
+                                ui.label(colum_name);
+                            });
                     }
 
                     if resp.hovered() && viewer.is_sortable_column(col.0) {
@@ -292,12 +292,10 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     resp.context_menu(|ui| {
                         if ui.button(self.translator.translate("context-menu-hide")).clicked() {
                             commands.push(Command::CcHideColumn(col));
-                            ui.close_menu();
                         }
 
                         if !s.sort().is_empty() && ui.button(self.translator.translate("context-menu-clear-sort")).clicked() {
                             commands.push(Command::SetColumnSort(Vec::new()));
-                            ui.close_menu();
                         }
 
                         if has_any_hidden_col {
@@ -312,7 +310,6 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                                         what: col,
                                         at: vis_col,
                                     });
-                                    ui.close_menu();
                                 }
                             }
                         }
@@ -742,7 +739,6 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
 
                                 if r.clicked() {
                                     actions.push(action);
-                                    ui.close_menu();
                                 }
                             });
 

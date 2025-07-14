@@ -315,7 +315,7 @@ impl eframe::App for DemoApp {
         is_sync(&self.table);
 
         egui::TopBottomPanel::top("MenuBar").show(ctx, |ui| {
-            egui::menu::bar(ui, |ui| {
+            egui::MenuBar::new().ui(ui, |ui| {
                 ui.hyperlink_to(
                     " kang-sw/egui-data-table",
                     "https://github.com/kang-sw/egui-data-table",
@@ -342,7 +342,7 @@ impl eframe::App for DemoApp {
                     )
                     .dnd_set_drag_payload(String::from("Hallo~"));
 
-                egui::menu::menu_button(ui, "🎌 Flags", |ui| {
+                ui.menu_button("🎌 Flags", |ui| {
                     ui.checkbox(&mut self.viewer.row_protection, "Row Protection")
                         .on_hover_text(
                             "If checked, any rows `Is Student` marked \
