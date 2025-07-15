@@ -202,7 +202,7 @@ impl RowViewer<PartStatesRow> for Viewer {
 impl eframe::App for DemoApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::top("menubar").show(ctx, |ui| {
-            egui::menu::bar(ui, |ui| {
+            egui::MenuBar::new().ui(ui, |ui| {
                 ui.checkbox(
                     &mut self.viewer.enable_row_insertion,
                     "Enable Row Insertion",
