@@ -84,6 +84,11 @@ impl RowCodec<Row> for Codec {
 /* ------------------------------------ Viewer Implementation ----------------------------------- */
 
 impl RowViewer<Row> for Viewer {
+
+    fn on_highlight_cell(&mut self, row: &Row, column: usize) {
+        println!("cell highlighted: row: {:?}, column: {}", row, column);
+    }
+
     fn try_create_codec(&mut self, _: bool) -> Option<impl RowCodec<Row>> {
         Some(Codec)
     }

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+### Fixed
+
+- Missing call to `on_highlight_cell`. It was added to the API in 0.6.2 but was never called. 
+
 ## [0.7.0]
 
 ### Added
