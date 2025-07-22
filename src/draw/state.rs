@@ -957,6 +957,15 @@ impl<R> UiState<R> {
             Command::CcSetSelection(sel) => {
                 if !sel.is_empty() {
                     self.cc_interactive_cell = sel[0].0;
+                    
+                    let (ic_r, ic_c) = self.cc_interactive_cell.row_col(self.p.vis_cols.len());
+                    let row_id = self.cc_rows[ic_r.0];
+
+                    let idx = self.vis_cols()[ic_c.0];
+
+                    let row = &table.rows[row_id.0];
+                        
+                    vwr.on_highlight_cell(row, idx.0);
                 }
 
                 let (highlighted, unhighlighted) = self.get_highlight_changes(table, &sel);
