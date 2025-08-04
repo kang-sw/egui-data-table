@@ -845,19 +845,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
             let clicked_elsewhere = resp.clicked_elsewhere();
             // IMPORTANT: cannot use `resp.contains_pointer()` here
             let response_rect_contains_pointer = resp.rect.contains(pointer_interact_pos);
-            
-            if true {
-                let color = match response_rect_contains_pointer {
-                    true => Color32::GREEN,
-                    false => Color32::RED,
-                };
-                let width = match clicked_elsewhere {
-                    true => 2.0,
-                    false => 1.0,
-                };
-                ctx.layer_painter(resp.layer_id).rect_stroke(resp.rect, CornerRadius::ZERO, Stroke::new(width, color), StrokeKind::Outside);
-            }
-            
+
             if resp.clicked() | resp.dragged() {
                 s.cci_has_focus = true;
             } else if clicked_elsewhere && !response_rect_contains_pointer {
