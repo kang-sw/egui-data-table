@@ -17,16 +17,18 @@ mod columns {
     // columns can easily be reordered simply by changing the values of these indices.
     pub const NAME: usize = 0;
     pub const AGE: usize = 1;
-    pub const IS_STUDENT: usize = 2;
-    pub const GRADE: usize = 3;
-    pub const ROW_LOCKED: usize = 4;
-
+    pub const GENDER: usize = 2;
+    pub const IS_STUDENT: usize = 3;
+    pub const GRADE: usize = 4;
+    pub const ROW_LOCKED: usize = 5;
+    
     /// count of columns
-    pub const COLUMN_COUNT: usize = 5;
+    pub const COLUMN_COUNT: usize = 6;
 
     pub const COLUMN_NAMES: [&str; COLUMN_COUNT] = [
         "Name (Click to sort)",
         "Age",
+        "Gender",
         "Is Student (Not sortable)",
         "Grade",
         "Row locked",
@@ -46,6 +48,7 @@ struct Viewer {
 struct Row {
     name: String,
     age: i32,
+    gender: Option<Gender>,
     is_student: bool,
     grade: Grade,
     row_locked: bool
@@ -56,6 +59,7 @@ impl Default for Row {
         Row {
             name: "".to_string(),
             age: 0,
+            gender: None,
             is_student: false,
             grade: Grade::F,
             row_locked: false
@@ -120,6 +124,22 @@ impl FromStr for Grade {
         Ok(value)
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Gender {
+    Male,
+    Female,
+}
+
+impl Display for Gender {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Gender::Male => write!(f, "Male"),
+            Gender::Female => write!(f, "Female"),
+        }
+    }
+}
+
 
 /* -------------------------------------------- Codec ------------------------------------------- */
 
@@ -186,7 +206,7 @@ impl RowViewer<Row> for Viewer {
     }
 
     fn is_sortable_column(&mut self, column: usize) -> bool {
-        [true, true, false, true, true][column]
+        [true, true, true, false, true, true][column]
     }
 
     fn is_editable_cell(&mut self, column: usize, _row: usize, row_value: &Row) -> bool {
@@ -202,6 +222,7 @@ impl RowViewer<Row> for Viewer {
         match column {
             NAME => row_l.name.cmp(&row_r.name),
             AGE => row_l.age.cmp(&row_r.age),
+            GENDER => row_l.gender.cmp(&row_r.gender),
             IS_STUDENT => unreachable!(),
             GRADE => row_l.grade.cmp(&row_r.grade),
             ROW_LOCKED => row_l.row_locked.cmp(&row_r.row_locked),
@@ -217,6 +238,7 @@ impl RowViewer<Row> for Viewer {
         match column {
             NAME => dst.name.clone_from(&src.name),
             AGE => dst.age = src.age,
+            GENDER => dst.gender = src.gender,
             IS_STUDENT => dst.is_student = src.is_student,
             GRADE => dst.grade = src.grade,
             ROW_LOCKED => dst.row_locked = src.row_locked,
@@ -250,6 +272,7 @@ impl RowViewer<Row> for Viewer {
         let _ = match column {
             NAME => ui.label(&row.name),
             AGE => ui.label(row.age.to_string()),
+            GENDER => ui.label(row.gender.map(|gender|gender.to_string()).unwrap_or("Unspecified".to_string())),
             IS_STUDENT => ui.checkbox(&mut { row.is_student }, ""),
             GRADE => ui.label(row.grade.to_string()),
             ROW_LOCKED => ui.checkbox(&mut { row.row_locked }, ""),
@@ -269,6 +292,7 @@ impl RowViewer<Row> for Viewer {
                 Box::new(Row{ 
                     name: (*x).clone(), 
                     age: 9999,
+                    gender: Some(Gender::Female),
                     is_student: false,
                     grade: Grade::A,
                     row_locked: false
@@ -291,6 +315,33 @@ impl RowViewer<Row> for Viewer {
                     .response
             }
             AGE => ui.add(egui::DragValue::new(&mut row.age).speed(1.0)),
+            GENDER => {
+                let gender = &mut row.gender;
+                
+                egui::ComboBox::new(ui.id().with("gender"), "".to_string())
+                    .selected_text(gender.map(|gender|gender.to_string()).unwrap_or("Unspecified".to_string()))
+                    .show_ui(ui, |ui|{
+                        if ui
+                            .add(egui::Button::selectable(
+                                matches!(gender, Some(gender) if *gender == Gender::Male),
+                                "Male"
+                            ))
+                            .clicked()
+                        {
+                            *gender = Some(Gender::Male);
+                        }
+                        if ui
+                            .add(egui::Button::selectable(
+                                matches!(gender, Some(gender) if *gender == Gender::Female),
+                                "Female"
+                            ))
+                            .clicked()
+                        {
+                            *gender = Some(Gender::Female);
+                        }
+
+                    }).response
+            }
             IS_STUDENT => ui.checkbox(&mut row.is_student, ""),
             GRADE => {
                 let grade = &mut row.grade;
@@ -369,6 +420,12 @@ impl Default for DemoApp {
                     Row {
                         name: name_gen.next().unwrap(),
                         age: rng.i32(4..31),
+                        gender: match rng.i32(0..=2) {
+                            0 => None,
+                            1 => Some(Gender::Male),
+                            2 => Some(Gender::Female),
+                            _ => unreachable!(),
+                        },
                         is_student: rng.bool(),
                         grade: rng.i32(0..=5).try_into().unwrap_or(Grade::F),
                         row_locked: false,
