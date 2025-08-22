@@ -1,6 +1,6 @@
 use std::mem::{replace, take};
 
-use egui::{Align, Color32, Event, Label, Layout, PointerButton, PopupAnchor, Rect, Response, RichText, Sense, Stroke, StrokeKind, Tooltip, Vec2b};
+use egui::{Align, Color32, CornerRadius, Event, Label, Layout, PointerButton, PopupAnchor, Rect, Response, RichText, Sense, Stroke, StrokeKind, Tooltip, Vec2b};
 use egui_extras::Column;
 use tap::prelude::{Pipe, Tap};
 
@@ -841,9 +841,14 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
 
         // Control overall focus status.
         if let Some(resp) = resp_total.clone() {
+
+            let clicked_elsewhere = resp.clicked_elsewhere();
+            // IMPORTANT: cannot use `resp.contains_pointer()` here
+            let response_rect_contains_pointer = resp.rect.contains(pointer_interact_pos);
+
             if resp.clicked() | resp.dragged() {
                 s.cci_has_focus = true;
-            } else if resp.clicked_elsewhere() {
+            } else if clicked_elsewhere && !response_rect_contains_pointer {
                 s.cci_has_focus = false;
                 if s.is_editing() {
                     commands.push(Command::CcCommitEdit)
