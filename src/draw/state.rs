@@ -3,7 +3,7 @@ use std::{
     hash::{Hash, Hasher},
     mem::{replace, take},
 };
-
+use std::collections::HashSet;
 use egui::{
     ahash::{AHasher, HashMap, HashMapExt},
     Modifiers,
@@ -766,13 +766,6 @@ impl<R> UiState<R> {
         sel.contains(self.p.vis_cols.len(), row, col)
     }
 
-    fn vis_sel_to_row<'a>(&'a self, table: &'a DataTable<R>, sel: &VisSelection) -> &'a R {
-        let (ic_r, _ic_c) = sel.1.row_col(self.p.vis_cols.len());
-        let row_id = self.cc_rows[ic_r.0];
-
-        (&table.rows[row_id.0]) as _
-    }
-
     fn get_highlight_changes<'a>(
         &'a self,
         table: &'a DataTable<R>,
@@ -784,17 +777,62 @@ impl<R> UiState<R> {
         if let CursorState::Select(s) = &self.cc_cursor {
             ohs = s.iter().collect();
         }
-        let new_highlight = nhs.difference(&ohs);
-        let old_highlight = ohs.difference(&nhs);
-        let highlighted: Vec<&R> = new_highlight
+
+        // IMPORTANT the new highlight may include a selection that includes the old highlight selection
+        //           this happens when making a second multi-select using shift
+        //           e.g.   old: 1..=5, 10..=10, new: 1..=5, 10..=15
+
+        /// Flatten a set of ranges into a set of linear indices, e.g. [(1,3), (6,8)] -> [1,2,3,6,7,8]
+        fn flatten_ranges(ranges: &[(usize, usize)]) -> HashSet<usize> {
+            ranges.iter()
+                .flat_map(|&(start, end)| start..=end)
+                .collect()
+        }
+
+        /// Only keep elements in old_rows that are NOT in new_rows
+        fn deselected_rows(old_rows: &HashSet<usize>, new_rows: &HashSet<usize>) -> Vec<usize> {
+            let missing: Vec<usize> = old_rows
+                .difference(&new_rows)
+                .copied()
+                .collect();
+
+            missing
+        }
+        
+        let nhs_range = self.make_row_range(&nhs);
+        let ohs_range = self.make_row_range(&ohs);
+        
+        let nhs_rows = flatten_ranges(&nhs_range);
+        let ohs_rows = flatten_ranges(&ohs_range);
+
+        let deselected_rows = deselected_rows(&ohs_rows, &nhs_rows);
+        
+        let highlighted: Vec<&R> = nhs_rows
             .into_iter()
-            .map(|v| self.vis_sel_to_row(table, v))
+            .sorted()
+            .map(|r| {
+                let row_id = self.cc_rows[r];
+                &table.rows[row_id.0]
+            })
             .collect();
-        let unhighlighted: Vec<&R> = old_highlight
+        let unhighlighted: Vec<&R> = deselected_rows
             .into_iter()
-            .map(|v| self.vis_sel_to_row(table, v))
+            .sorted()
+            .map(|r| {
+                let row_id = self.cc_rows[r];
+                &table.rows[row_id.0]
+            })
             .collect();
+
         (highlighted, unhighlighted)
+    }
+
+    fn make_row_range<'a>(&'a self, nhs: &BTreeSet<&VisSelection>) -> Vec<(usize, usize)> {
+        nhs.iter().map(|sel| {
+            let (start_ic_r, _ic_c) = sel.0.row_col(self.p.vis_cols.len());
+            let (end_ic_r, _ic_c) = sel.1.row_col(self.p.vis_cols.len());
+            (start_ic_r.0, end_ic_r.0)
+        }).collect::<Vec<(usize, usize)>>()
     }
 
     pub fn push_new_command<V: RowViewer<R>>(

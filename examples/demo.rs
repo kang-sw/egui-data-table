@@ -6,7 +6,6 @@ use egui_data_table::{
     viewer::{default_hotkeys, CellWriteContext, DecodeErrorBehavior, RowCodec, UiActionContext},
     RowViewer,
 };
-use log::info;
 
 /* ----------------------------------------- Data Scheme ---------------------------------------- */
 
@@ -250,8 +249,8 @@ impl RowViewer<Row> for Viewer {
     }
 
     fn on_highlight_change(&mut self, highlighted: &[&Row], unhighlighted: &[&Row]) {
-        info!("highlight {:?}", highlighted);
-        info!("unhighlight {:?}", unhighlighted);
+        println!("highlight {:?}", highlighted);
+        println!("unhighlight {:?}", unhighlighted);
     }
 
     fn on_row_updated(&mut self, row_index: usize, new_row: &Row, old_row: &Row) {
