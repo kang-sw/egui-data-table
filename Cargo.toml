@@ -13,8 +13,8 @@ license-file = "LICENSE"
 members = ["demo"]
 
 [dependencies]
-egui = "0.32"
-egui_extras = { version = "0.32", default-features = false, features = [
+egui = "0.33"
+egui_extras = { version = "0.33", default-features = false, features = [
     "serde",
 ] }
 tap = "1"
@@ -23,7 +23,7 @@ serde = { version = "1", optional = true, features = ["derive"] }
 thiserror = "2"
 
 [dev-dependencies]
-eframe = { version = "0.32", features = ["serde", "persistence"] }
+eframe = { version = "0.33", features = ["serde", "persistence"] }
 fastrand = "2"
 names = { version = "0.14", default-features = false }
 log = "0.4"
