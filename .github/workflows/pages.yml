@@ -23,7 +23,7 @@ jobs:
       - uses: jetli/trunk-action@v0.5.1
         with:
           version: 'v0.21.14'
-      - run: trunk build --release --verbose --public-url /egui-data-table ./demo/index.html
+      - run: trunk build --release --verbose --public-url /egui-data-table --dist demo/dist ./demo/index.html
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
