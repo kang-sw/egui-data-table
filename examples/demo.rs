@@ -139,6 +139,18 @@ impl Display for Gender {
     }
 }
 
+impl FromStr for Gender {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Male" => Ok(Gender::Male),
+            "Female" => Ok(Gender::Female),
+            _ => Err(()),
+        }
+    }
+}
+
 /* -------------------------------------------- Codec ------------------------------------------- */
 
 struct Codec;
@@ -153,7 +165,11 @@ impl RowCodec<Row> for Codec {
             IS_STUDENT => dst.push_str(&src_row.is_student.to_string()),
             GRADE => dst.push_str(src_row.grade.to_string().as_str()),
             ROW_LOCKED => dst.push_str(&src_row.row_locked.to_string()),
-            GENDER => (),
+            GENDER => {
+                if let Some(g) = &src_row.gender {
+                    dst.push_str(&g.to_string());
+                }
+            }
             _ => unreachable!(),
         }
     }
@@ -176,7 +192,9 @@ impl RowCodec<Row> for Codec {
             ROW_LOCKED => {
                 dst_row.row_locked = src_data.parse().map_err(|_| DecodeErrorBehavior::SkipRow)?
             }
-            GENDER => (),
+            GENDER => {
+                dst_row.gender = src_data.trim().parse().ok();
+            }
             _ => unreachable!(),
         }
 
@@ -192,7 +210,7 @@ impl RowCodec<Row> for Codec {
 
 impl RowViewer<Row> for Viewer {
     fn on_highlight_cell(&mut self, row: &Row, column: usize) {
-        println!("cell highlighted: row: {:?}, column: {}", row, column);
+        log::trace!("cell highlighted: row: {:?}, column: {}", row, column);
     }
 
     fn try_create_codec(&mut self, _: bool) -> Option<impl RowCodec<Row>> {
@@ -208,7 +226,7 @@ impl RowViewer<Row> for Viewer {
     }
 
     fn is_sortable_column(&mut self, column: usize) -> bool {
-        [true, true, true, false, true, true][column]
+        !matches!(column, IS_STUDENT)
     }
 
     fn is_editable_cell(&mut self, column: usize, _row: usize, row_value: &Row) -> bool {
@@ -225,10 +243,9 @@ impl RowViewer<Row> for Viewer {
             NAME => row_l.name.cmp(&row_r.name),
             AGE => row_l.age.cmp(&row_r.age),
             GENDER => row_l.gender.cmp(&row_r.gender),
-            IS_STUDENT => unreachable!(),
             GRADE => row_l.grade.cmp(&row_r.grade),
             ROW_LOCKED => row_l.row_locked.cmp(&row_r.row_locked),
-            _ => unreachable!(),
+            _ => std::cmp::Ordering::Equal,
         }
     }
 
@@ -271,20 +288,32 @@ impl RowViewer<Row> for Viewer {
     }
 
     fn show_cell_view(&mut self, ui: &mut egui::Ui, row: &Row, column: usize) {
-        let _ = match column {
-            NAME => ui.label(&row.name),
-            AGE => ui.label(row.age.to_string()),
-            GENDER => ui.label(
-                row.gender
-                    .map(|gender| gender.to_string())
-                    .unwrap_or("Unspecified".to_string()),
-            ),
-            IS_STUDENT => ui.checkbox(&mut { row.is_student }, ""),
-            GRADE => ui.label(row.grade.to_string()),
-            ROW_LOCKED => ui.checkbox(&mut { row.row_locked }, ""),
-
+        match column {
+            NAME => {
+                ui.label(&row.name);
+            }
+            AGE => {
+                ui.label(row.age.to_string());
+            }
+            GENDER => {
+                ui.label(
+                    row.gender
+                        .map(|gender| gender.to_string())
+                        .as_deref()
+                        .unwrap_or("Unspecified"),
+                );
+            }
+            IS_STUDENT => {
+                ui.add_enabled(false, egui::Checkbox::new(&mut { row.is_student }, ""));
+            }
+            GRADE => {
+                ui.label(row.grade.to_string());
+            }
+            ROW_LOCKED => {
+                ui.add_enabled(false, egui::Checkbox::new(&mut { row.row_locked }, ""));
+            }
             _ => unreachable!(),
-        };
+        }
     }
 
     fn on_cell_view_response(
@@ -392,23 +421,25 @@ impl RowViewer<Row> for Viewer {
     }
 
     fn on_highlight_change(&mut self, highlighted: &[&Row], unhighlighted: &[&Row]) {
-        println!("highlight {:?}", highlighted);
-        println!("unhighlight {:?}", unhighlighted);
+        log::trace!("highlight {:?}", highlighted);
+        log::trace!("unhighlight {:?}", unhighlighted);
     }
 
     fn on_row_updated(&mut self, row_index: usize, new_row: &Row, old_row: &Row) {
-        println!(
+        log::trace!(
             "row updated. row_id: {}, new_row: {:?}, old_row: {:?}",
-            row_index, new_row, old_row
+            row_index,
+            new_row,
+            old_row
         );
     }
 
     fn on_row_inserted(&mut self, row_index: usize, row: &Row) {
-        println!("row inserted. row_id: {}, values: {:?}", row_index, row);
+        log::trace!("row inserted. row_id: {}, values: {:?}", row_index, row);
     }
 
     fn on_row_removed(&mut self, row_index: usize, row: &Row) {
-        println!("row removed. row_id: {}, values: {:?}", row_index, row);
+        log::trace!("row removed. row_id: {}, values: {:?}", row_index, row);
     }
 }
 
@@ -446,8 +477,8 @@ impl Default for DemoApp {
             .collect(),
             viewer: Viewer {
                 name_filter: String::new(),
-                hotkeys: Vec::new(),
                 row_protection: false,
+                hotkeys: Vec::new(),
             },
             style_override: Default::default(),
             scroll_bar_always_visible: false,
