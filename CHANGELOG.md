@@ -7,9 +7,51 @@ and this project adheres to [Semantic Versioning].
 
 ## [Unreleased]
 
+### Changed
+
+- **Internal**: Decouple state module from egui for testability.
+  - Replace `egui::ahash::HashMap` / `AHasher` with `std::collections::HashMap` / `DefaultHasher`.
+  - Abstract `egui::Modifiers` into internal `SelectionModifier` enum; conversion happens at the view boundary.
+  - Introduce `DataModelOps<R>` trait extracting pure data-model methods from `RowViewer<R>`, with blanket impl for all `RowViewer<R>` types.
+  - Split `draw.rs` into `draw/mod.rs` and `draw/body.rs`; split `draw/state.rs` into submodules.
+- No public API changes.
+
+### Added
+
+- 31 unit tests for state module (types geometry, command undo/redo, selection, validation, movement).
+
 ### Fixed
 
-- Missing call to `on_highlight_cell`. It was added to the API in 0.6.2 but was never called. 
+- Fix crash in demo from missing gender encode/decode.
+
+## [0.9.0]
+
+### Changed
+
+- Bump `egui` dependency to 0.33.
+
+## [0.8.1]
+
+### Fixed
+
+- Fix `on_highlight_change` not being called correctly.
+- Add workaround for drop-downs not working in cells.
+
+### Added
+
+- Drop-down field for 'gender' in demo.
+- Improved demo: easy column re-ordering, extracted conversion functions, reduced magic numbers.
+
+## [0.8.0]
+
+### Changed
+
+- Bump `egui` dependency to 0.32.
+- Bump Rust edition to 2024 (egui requires Rust 1.85).
+
+### Fixed
+
+- Missing call to `on_highlight_cell`. It was added to the API in 0.6.2 but was never called.
 
 ## [0.7.0]
 
