@@ -1,8 +1,9 @@
-use crate::viewer::{CellWriteContext, EmptyRowCreateContext};
 use crate::RowViewer;
+use crate::viewer::{CellWriteContext, EmptyRowCreateContext};
 
 /// A subset of `RowViewer<R>` containing only pure data-model methods (no egui dependency).
 /// This enables unit testing state logic without requiring an egui context.
+#[allow(dead_code)]
 pub(crate) trait DataModelOps<R> {
     fn num_columns(&mut self) -> usize;
     fn is_sortable_column(&mut self, column: usize) -> bool;

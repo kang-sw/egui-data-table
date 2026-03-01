@@ -1,23 +1,26 @@
 use std::mem::{replace, take};
 
-use egui::{Align, Color32, CornerRadius, Event, Label, Layout, PointerButton, PopupAnchor, Rect, Response, RichText, Sense, Stroke, StrokeKind, Tooltip, Vec2b};
+use egui::{
+    Align, Color32, Event, Label, Layout, PointerButton, PopupAnchor, Rect, Response, RichText,
+    Sense, Stroke, StrokeKind, Tooltip, Vec2b,
+};
 use egui_extras::Column;
 use tap::prelude::{Pipe, Tap};
 
 use crate::{
-    viewer::{EmptyRowCreateContext, RowViewer},
     DataTable, UiAction,
+    viewer::{EmptyRowCreateContext, RowViewer},
 };
 
 use self::state::*;
 
+use egui::scroll_area::ScrollBarVisibility;
 use format as f;
 use std::sync::Arc;
-use egui::scroll_area::ScrollBarVisibility;
 
+mod body;
 pub(crate) mod state;
 mod tsv;
-mod body;
 
 /* -------------------------------------------- Style ------------------------------------------- */
 
@@ -72,7 +75,7 @@ pub struct Renderer<'a, R, V: RowViewer<R>> {
     viewer: &'a mut V,
     state: Option<Box<UiState<R>>>,
     style: Style,
-    translator: Arc<dyn Translator>
+    translator: Arc<dyn Translator>,
 }
 
 impl<R, V: RowViewer<R>> egui::Widget for Renderer<'_, R, V> {
@@ -208,27 +211,38 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     let vis_col = VisColumnPos(vis_col);
                     let mut painter = None;
                     let (col_rect, resp) = h.col(|ui| {
-                        egui::Sides::new().show(ui, |ui| {
-                            ui.add(Label::new(viewer.column_name(col.0))
-                                .selectable(false)
-                            );
-                        }, |ui|{
-                            if let Some(pos) = s.sort().iter().position(|(c, ..)| c == &col) {
-                                let is_asc = s.sort()[pos].1 .0 as usize;
+                        egui::Sides::new().show(
+                            ui,
+                            |ui| {
+                                ui.add(Label::new(viewer.column_name(col.0)).selectable(false));
+                            },
+                            |ui| {
+                                if let Some(pos) = s.sort().iter().position(|(c, ..)| c == &col) {
+                                    let is_asc = s.sort()[pos].1.0 as usize;
 
-                                ui.colored_label(
-                                    [green, Color32::RED][is_asc],
-                                    RichText::new(format!("{}{}", ["↘", "↗"][is_asc], pos + 1,))
+                                    ui.colored_label(
+                                        [green, Color32::RED][is_asc],
+                                        RichText::new(
+                                            format!("{}{}", ["↘", "↗"][is_asc], pos + 1,),
+                                        )
                                         .monospace(),
-                                );
-                            } else {
-                                // calculate the maximum width for the sort indicator
-                                let max_sort_indicator_width = (s.num_columns() + 1).to_string().len() + 1;
-                                // when the sort indicator is present, create a label the same size as the sort indicator
-                                // so that the columns don't resize when sorted.
-                                ui.add(Label::new(RichText::new(" ".repeat(max_sort_indicator_width)).monospace()).selectable(false));
-                            }
-                        });
+                                    );
+                                } else {
+                                    // calculate the maximum width for the sort indicator
+                                    let max_sort_indicator_width =
+                                        (s.num_columns() + 1).to_string().len() + 1;
+                                    // when the sort indicator is present, create a label the same size as the sort indicator
+                                    // so that the columns don't resize when sorted.
+                                    ui.add(
+                                        Label::new(
+                                            RichText::new(" ".repeat(max_sort_indicator_width))
+                                                .monospace(),
+                                        )
+                                        .selectable(false),
+                                    );
+                                }
+                            },
+                        );
 
                         painter = Some(ui.painter().clone());
                     });
@@ -237,12 +251,17 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     resp.dnd_set_drag_payload(vis_col);
 
                     if resp.dragged() {
-                        Tooltip::always_open(ctx.clone(), ui_layer_id, "_EGUI_DATATABLE__COLUMN_MOVE__".into(), PopupAnchor::Pointer)
-                            .gap(12.0)
-                            .show(|ui|{
-                                let colum_name = viewer.column_name(col.0);
-                                ui.label(colum_name);
-                            });
+                        Tooltip::always_open(
+                            ctx.clone(),
+                            ui_layer_id,
+                            "_EGUI_DATATABLE__COLUMN_MOVE__".into(),
+                            PopupAnchor::Pointer,
+                        )
+                        .gap(12.0)
+                        .show(|ui| {
+                            let colum_name = viewer.column_name(col.0);
+                            ui.label(colum_name);
+                        });
                     }
 
                     if resp.hovered() && viewer.is_sortable_column(col.0) {
@@ -291,11 +310,18 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
                     }
 
                     resp.context_menu(|ui| {
-                        if ui.button(self.translator.translate("context-menu-hide")).clicked() {
+                        if ui
+                            .button(self.translator.translate("context-menu-hide"))
+                            .clicked()
+                        {
                             commands.push(Command::CcHideColumn(col));
                         }
 
-                        if !s.sort().is_empty() && ui.button(self.translator.translate("context-menu-clear-sort")).clicked() {
+                        if !s.sort().is_empty()
+                            && ui
+                                .button(self.translator.translate("context-menu-clear-sort"))
+                                .clicked()
+                        {
                             commands.push(Command::SetColumnSort(Vec::new()));
                         }
 
@@ -342,7 +368,6 @@ impl<R, V: RowViewer<R>> Drop for Renderer<'_, R, V> {
 /* ------------------------------------------- Translations ------------------------------------- */
 
 pub trait Translator {
-
     /// Translates a given key into its corresponding string representation.
     ///
     /// If the translation key is unknown, return the key as a [`String`]
@@ -372,6 +397,7 @@ impl Translator for EnglishTranslator {
             "context-menu-hidden" => "Hidden",
             "context-menu-clear-sort" => "Clear sort",
             _ => key,
-        }.to_string()
+        }
+        .to_string()
     }
 }

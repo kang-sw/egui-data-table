@@ -34,19 +34,16 @@ impl<R> UiState<R> {
     }
 
     pub fn cci_sel_update_row(&mut self, row: VisRowPos) {
-        [0, self.p.vis_cols.len() - 1].map(|col| {
-            self.cci_sel_update(row.linear_index(self.p.vis_cols.len(), VisColumnPos(col)))
-        });
+        for col in [0, self.p.vis_cols.len() - 1] {
+            self.cci_sel_update(row.linear_index(self.p.vis_cols.len(), VisColumnPos(col)));
+        }
     }
 
     pub fn has_cci_selection(&self) -> bool {
         self.cci_selection.is_some()
     }
 
-    pub fn cci_take_selection(
-        &mut self,
-        modifier: SelectionModifier,
-    ) -> Option<Vec<VisSelection>> {
+    pub fn cci_take_selection(&mut self, modifier: SelectionModifier) -> Option<Vec<VisSelection>> {
         let ncol = self.p.vis_cols.len();
         let cci_sel = self
             .cci_selection
@@ -170,17 +167,15 @@ impl<R> UiState<R> {
 
         /// Flatten a set of ranges into a set of linear indices, e.g. [(1,3), (6,8)] -> [1,2,3,6,7,8]
         fn flatten_ranges(ranges: &[(usize, usize)]) -> HashSet<usize> {
-            ranges.iter()
+            ranges
+                .iter()
                 .flat_map(|&(start, end)| start..=end)
                 .collect()
         }
 
         /// Only keep elements in old_rows that are NOT in new_rows
         fn deselected_rows(old_rows: &HashSet<usize>, new_rows: &HashSet<usize>) -> Vec<usize> {
-            let missing: Vec<usize> = old_rows
-                .difference(&new_rows)
-                .copied()
-                .collect();
+            let missing: Vec<usize> = old_rows.difference(&new_rows).copied().collect();
 
             missing
         }
@@ -214,10 +209,12 @@ impl<R> UiState<R> {
     }
 
     fn make_row_range<'a>(&'a self, nhs: &BTreeSet<&VisSelection>) -> Vec<(usize, usize)> {
-        nhs.iter().map(|sel| {
-            let (start_ic_r, _ic_c) = sel.0.row_col(self.p.vis_cols.len());
-            let (end_ic_r, _ic_c) = sel.1.row_col(self.p.vis_cols.len());
-            (start_ic_r.0, end_ic_r.0)
-        }).collect::<Vec<(usize, usize)>>()
+        nhs.iter()
+            .map(|sel| {
+                let (start_ic_r, _ic_c) = sel.0.row_col(self.p.vis_cols.len());
+                let (end_ic_r, _ic_c) = sel.1.row_col(self.p.vis_cols.len());
+                (start_ic_r.0, end_ic_r.0)
+            })
+            .collect::<Vec<(usize, usize)>>()
     }
 }

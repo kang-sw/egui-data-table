@@ -332,8 +332,8 @@ impl<R, V: RowViewer<R>> Renderer<'_, R, V> {
                         let mut max = usize::MIN;
 
                         for sel in sel {
-                            min = min.min(sel.0 .0);
-                            max = max.max(sel.1 .0);
+                            min = min.min(sel.0.0);
+                            max = max.max(sel.1.0);
                         }
 
                         let (r_min, _) = VisLinearIdx(min).row_col(s.vis_cols().len());
@@ -350,9 +350,24 @@ impl<R, V: RowViewer<R>> Renderer<'_, R, V> {
                     let mut draw_sep = false;
 
                     let context_menu_items = [
-                        Some((selected, "🖻", "context-menu-selection-copy", UiAction::CopySelection)),
-                        Some((selected, "🖻", "context-menu-selection-cut", UiAction::CutSelection)),
-                        Some((selected, "🗙", "context-menu-selection-clear", UiAction::DeleteSelection)),
+                        Some((
+                            selected,
+                            "🖻",
+                            "context-menu-selection-copy",
+                            UiAction::CopySelection,
+                        )),
+                        Some((
+                            selected,
+                            "🖻",
+                            "context-menu-selection-cut",
+                            UiAction::CutSelection,
+                        )),
+                        Some((
+                            selected,
+                            "🗙",
+                            "context-menu-selection-clear",
+                            UiAction::DeleteSelection,
+                        )),
                         Some((
                             sel_multi_row,
                             "🗐",
@@ -360,7 +375,12 @@ impl<R, V: RowViewer<R>> Renderer<'_, R, V> {
                             UiAction::SelectionDuplicateValues,
                         )),
                         None,
-                        Some((clip, "➿", "context-menu-clipboard-paste", UiAction::PasteInPlace)),
+                        Some((
+                            clip,
+                            "➿",
+                            "context-menu-clipboard-paste",
+                            UiAction::PasteInPlace,
+                        )),
                         Some((
                             clip && viewer.allow_row_insertions(),
                             "🛠",
@@ -385,7 +405,7 @@ impl<R, V: RowViewer<R>> Renderer<'_, R, V> {
                         Some((b_redo, "⎘", "context-menu-redo", UiAction::Redo)),
                     ];
 
-                    context_menu_items.map(|opt| {
+                    for opt in context_menu_items {
                         if let Some((icon, key, action)) =
                             opt.filter(|x| x.0).map(|x| (x.1, x.2, x.3))
                         {
@@ -417,7 +437,7 @@ impl<R, V: RowViewer<R>> Renderer<'_, R, V> {
                             n_sep_menu = 0;
                             draw_sep = true;
                         }
-                    });
+                    }
                 });
 
                 // Forward DnD event if not any event was consumed by the response.
@@ -522,7 +542,6 @@ impl<R, V: RowViewer<R>> Renderer<'_, R, V> {
 
         // Control overall focus status.
         if let Some(resp) = resp_total.clone() {
-
             let clicked_elsewhere = resp.clicked_elsewhere();
             // IMPORTANT: cannot use `resp.contains_pointer()` here
             let response_rect_contains_pointer = resp.rect.contains(pointer_interact_pos);
