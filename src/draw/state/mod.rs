@@ -3,11 +3,8 @@ use std::{
     hash::{Hash, Hasher},
     mem::{replace, take},
 };
-use std::collections::HashSet;
-use egui::{
-    ahash::{AHasher, HashMap, HashMapExt},
-    Modifiers,
-};
+use std::collections::{HashMap, HashSet};
+use egui::Modifiers;
 use itertools::Itertools;
 use tap::prelude::{Pipe, Tap};
 

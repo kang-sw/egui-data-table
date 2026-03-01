@@ -4,7 +4,7 @@ impl<R> UiState<R> {
     pub fn validate_identity<V: RowViewer<R>>(&mut self, vwr: &mut V) {
         let num_columns = vwr.num_columns();
         let vwr_type_id = std::any::TypeId::of::<V>();
-        let vwr_hash = AHasher::default().pipe(|mut hsh| {
+        let vwr_hash = std::hash::DefaultHasher::new().pipe(|mut hsh| {
             vwr.row_filter_hash().hash(&mut hsh);
             hsh.finish()
         });
