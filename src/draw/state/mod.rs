@@ -1,6 +1,5 @@
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
-    hash::{Hash, Hasher},
     mem::{replace, take},
 };
 use std::collections::{HashMap, HashSet};
@@ -23,9 +22,11 @@ mod clipboard;
 mod selection;
 mod action;
 mod validation;
+mod model_ops;
 
 pub(crate) use types::*;
 pub(crate) use command::Command;
+pub(crate) use model_ops::DataModelOps;
 
 /// TODO: Serialization?
 pub(crate) struct UiState<R> {

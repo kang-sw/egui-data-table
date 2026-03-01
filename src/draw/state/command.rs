@@ -40,10 +40,10 @@ pub(crate) enum Command<R> {
 }
 
 impl<R> UiState<R> {
-    pub fn push_new_command<V: RowViewer<R>>(
+    pub fn push_new_command(
         &mut self,
         table: &mut DataTable<R>,
-        vwr: &mut V,
+        vwr: &mut impl DataModelOps<R>,
         command: Command<R>,
         capacity: usize,
     ) {
@@ -278,10 +278,10 @@ impl<R> UiState<R> {
         });
     }
 
-    pub(super) fn cmd_apply<V: RowViewer<R>>(
+    pub(super) fn cmd_apply(
         &mut self,
         table: &mut DataTable<R>,
-        vwr: &mut V,
+        vwr: &mut impl DataModelOps<R>,
         cmd: &Command<R>,
     ) {
         match cmd {
@@ -371,7 +371,7 @@ impl<R> UiState<R> {
         self.undo_cursor > 0
     }
 
-    pub fn undo<V: RowViewer<R>>(&mut self, table: &mut DataTable<R>, vwr: &mut V) -> bool {
+    pub fn undo(&mut self, table: &mut DataTable<R>, vwr: &mut impl DataModelOps<R>) -> bool {
         if self.undo_cursor == self.undo_queue.len() {
             return false;
         }
@@ -389,7 +389,7 @@ impl<R> UiState<R> {
         true
     }
 
-    pub fn redo<V: RowViewer<R>>(&mut self, table: &mut DataTable<R>, vwr: &mut V) -> bool {
+    pub fn redo(&mut self, table: &mut DataTable<R>, vwr: &mut impl DataModelOps<R>) -> bool {
         if self.undo_cursor == 0 {
             return false;
         }

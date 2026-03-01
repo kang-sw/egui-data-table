@@ -1,13 +1,10 @@
 use super::*;
 
 impl<R> UiState<R> {
-    pub fn validate_identity<V: RowViewer<R>>(&mut self, vwr: &mut V) {
+    pub fn validate_identity<V: DataModelOps<R> + 'static>(&mut self, vwr: &mut V) {
         let num_columns = vwr.num_columns();
         let vwr_type_id = std::any::TypeId::of::<V>();
-        let vwr_hash = std::hash::DefaultHasher::new().pipe(|mut hsh| {
-            vwr.row_filter_hash().hash(&mut hsh);
-            hsh.finish()
-        });
+        let vwr_hash = vwr.row_filter_hash();
 
         // Check for nontrivial changes.
         if self.p.num_columns == num_columns && self.viewer_type == vwr_type_id {
@@ -58,11 +55,11 @@ impl<R> UiState<R> {
     }
 
     #[cfg(feature = "persistency")]
-    pub fn validate_persistency<V: RowViewer<R>>(
+    pub fn validate_persistency(
         &mut self,
         ctx: &egui::Context,
         ui_id: egui::Id,
-        vwr: &mut V,
+        vwr: &mut impl DataModelOps<R>,
     ) {
         if !self.is_p_loaded {
             // Load initial storage status
@@ -85,7 +82,7 @@ impl<R> UiState<R> {
         }
     }
 
-    pub fn validate_cc<V: RowViewer<R>>(&mut self, rows: &mut [R], vwr: &mut V) {
+    pub fn validate_cc(&mut self, rows: &mut [R], vwr: &mut impl DataModelOps<R>) {
         if !replace(&mut self.cc_dirty, false) {
             self.handle_desired_selection();
             return;
