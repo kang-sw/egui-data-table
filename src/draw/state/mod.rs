@@ -24,6 +24,9 @@ mod action;
 mod validation;
 mod model_ops;
 
+#[cfg(test)]
+mod tests;
+
 pub(crate) use types::*;
 pub(crate) use command::Command;
 pub(crate) use model_ops::DataModelOps;
