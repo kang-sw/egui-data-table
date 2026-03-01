@@ -154,7 +154,6 @@ impl<R> UiState<R> {
                 let mut values = values.to_vec();
 
                 values.retain(|(row, col, slab_id)| {
-
                     if vwr.is_editable_cell(col.0, row.0, &table.rows[row.0]) {
                         vwr.confirm_cell_write_by_ui(
                             &table.rows[row.0],
@@ -165,7 +164,6 @@ impl<R> UiState<R> {
                     } else {
                         false
                     }
-
                 });
 
                 return self.push_new_command(
@@ -311,7 +309,9 @@ impl<R> UiState<R> {
                 let mut modified_rows: HashMap<RowIdx, R> = HashMap::new();
 
                 for (row, col, value_id) in values.iter() {
-                    let _ = modified_rows.entry(row.clone()).or_insert_with(|| vwr.clone_row(&table.rows[row.0]));
+                    let _ = modified_rows
+                        .entry(row.clone())
+                        .or_insert_with(|| vwr.clone_row(&table.rows[row.0]));
 
                     vwr.set_cell_value(&slab[value_id.0], &mut table.rows[row.0], col.0);
                 }

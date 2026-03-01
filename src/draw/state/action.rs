@@ -31,9 +31,7 @@ impl<R> UiState<R> {
                 let pos = self.moved_position(self.cc_interactive_cell, dir);
                 let (r, c) = pos.row_col(self.p.vis_cols.len());
 
-                let mut commands = vec![
-                    Command::CcCommitEdit,
-                ];
+                let mut commands = vec![Command::CcCommitEdit];
 
                 let row_id = self.cc_rows[r.0];
                 if vwr.is_editable_cell(c.0, r.0, &table.rows[row_id.0]) {

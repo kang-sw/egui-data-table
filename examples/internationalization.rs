@@ -3,13 +3,13 @@
 //! Note that it's possible to use more advanced translation systems like Fluent and egui_i18n.
 //! by providing something that implements the [`Translator`] trait, this is beyond the scope of this example.
 
-use std::borrow::Cow;
-use std::collections::HashMap;
 use egui::{ComboBox, Response, Ui};
 use egui_data_table::RowViewer;
+use egui_data_table::draw::{EnglishTranslator, Translator};
+use std::borrow::Cow;
+use std::collections::HashMap;
 use std::iter::repeat_with;
 use std::sync::Arc;
-use egui_data_table::draw::{EnglishTranslator, Translator};
 
 #[derive(Default)]
 struct CustomSpanishTranslator {}
@@ -47,14 +47,15 @@ impl Translator for CustomSpanishTranslator {
             "context-menu-clear-sort" => "Borrar ordenación",
 
             _ => key,
-        }.to_string()
+        }
+        .to_string()
     }
 }
 
 /// Allows additional translation keys, and can fall back to the EnglishTranslator supplied by this crate.
 #[derive(Default)]
 struct CustomEnglishTranslator {
-    fallback_translator: EnglishTranslator
+    fallback_translator: EnglishTranslator,
 }
 
 impl Translator for CustomEnglishTranslator {
@@ -88,11 +89,18 @@ struct DemoApp {
 
 impl Default for DemoApp {
     fn default() -> Self {
-
         let translators: HashMap<&'static str, Arc<dyn Translator>> = vec![
-            ("en_US", Arc::new(CustomEnglishTranslator::default()) as Arc<dyn Translator>),
-            ("es_ES", Arc::new(CustomSpanishTranslator::default()) as Arc<dyn Translator>),
-        ].into_iter().collect();
+            (
+                "en_US",
+                Arc::new(CustomEnglishTranslator::default()) as Arc<dyn Translator>,
+            ),
+            (
+                "es_ES",
+                Arc::new(CustomSpanishTranslator::default()) as Arc<dyn Translator>,
+            ),
+        ]
+        .into_iter()
+        .collect();
 
         let selected_language = "en_US".to_string();
 
@@ -102,20 +110,16 @@ impl Default for DemoApp {
             let mut rng = fastrand::Rng::new();
             let mut name_gen = names::Generator::with_naming(names::Name::Numbered);
 
-            repeat_with(move || {
-                Row(
-                    name_gen.next().unwrap(),
-                    rng.i32(4..31),
-                    rng.bool(),
-                )
-            })
+            repeat_with(move || Row(name_gen.next().unwrap(), rng.i32(4..31), rng.bool()))
         }
-            .take(10)
-            .collect();
+        .take(10)
+        .collect();
 
         Self {
             table,
-            viewer: Viewer { translator: translator.clone() },
+            viewer: Viewer {
+                translator: translator.clone(),
+            },
             selected_language_key: selected_language.to_string(),
             translators,
         }
@@ -143,7 +147,10 @@ impl RowViewer<Row> for Viewer {
     fn column_name(&mut self, column: usize) -> Cow<'static, str> {
         match column {
             0 => self.translator.translate("table-column-header-name").into(),
-            1 => self.translator.translate("table-column-header-number").into(),
+            1 => self
+                .translator
+                .translate("table-column-header-number")
+                .into(),
             2 => self.translator.translate("table-column-header-flag").into(),
             _ => unreachable!(),
         }
@@ -167,18 +174,9 @@ impl RowViewer<Row> for Viewer {
         };
     }
 
-    fn show_cell_editor(
-        &mut self,
-        ui: &mut Ui,
-        row: &mut Row,
-        column: usize,
-    ) -> Option<Response> {
+    fn show_cell_editor(&mut self, ui: &mut Ui, row: &mut Row, column: usize) -> Option<Response> {
         match column {
-            0 => {
-                egui::TextEdit::singleline(&mut row.0)
-                    .show(ui)
-                    .response
-            }
+            0 => egui::TextEdit::singleline(&mut row.0).show(ui).response,
             1 => ui.add(egui::DragValue::new(&mut row.1).speed(1.0)),
             2 => ui.checkbox(&mut row.2, ""),
             _ => unreachable!(),
@@ -202,7 +200,6 @@ impl RowViewer<Row> for Viewer {
 
 impl eframe::App for DemoApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-
         let mut language_keys: Vec<&str> = self.translators.keys().copied().collect();
         language_keys.sort();
 
@@ -214,18 +211,20 @@ impl eframe::App for DemoApp {
                 .show_ui(ui, |ui| {
                     for &language_key in &language_keys {
                         let language = translator.translate(language_key);
-                        if ui.selectable_label(self.selected_language_key == language_key, language).clicked() {
+                        if ui
+                            .selectable_label(self.selected_language_key == language_key, language)
+                            .clicked()
+                        {
                             self.selected_language_key = language_key.to_string();
-                            self.viewer.change_translator(self.translators[&self.selected_language_key.as_str()].clone());
+                            self.viewer.change_translator(
+                                self.translators[&self.selected_language_key.as_str()].clone(),
+                            );
                         }
                     }
                 });
         });
         egui::CentralPanel::default().show(ctx, |ui| {
-            let renderer = egui_data_table::Renderer::new(
-                &mut self.table,
-                &mut self.viewer,
-            )
+            let renderer = egui_data_table::Renderer::new(&mut self.table, &mut self.viewer)
                 .with_translator(translator);
 
             ui.add(renderer);

@@ -114,7 +114,7 @@ pub trait RowViewer<R>: 'static {
     }
 
     /// Returns if a given cell is 'editable'.
-    /// 
+    ///
     /// i.e.
     /// * true to allow editing of a cell
     /// * false to disable editing of a cell
@@ -243,7 +243,7 @@ pub trait RowViewer<R>: 'static {
     fn on_highlight_change(&mut self, highlighted: &[&R], unhighlighted: &[&R]) {
         let (_, _) = (highlighted, unhighlighted);
     }
-    
+
     /// Called when a row is updated, including when undoing/redoing
     fn on_row_updated(&mut self, row_index: usize, new_row: &R, old_row: &R) {
         let (_, _, _) = (row_index, new_row, old_row);

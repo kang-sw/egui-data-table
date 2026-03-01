@@ -1,35 +1,34 @@
+use itertools::Itertools;
+use std::collections::{HashMap, HashSet};
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     mem::{replace, take},
 };
-use std::collections::{HashMap, HashSet};
-use itertools::Itertools;
 use tap::prelude::{Pipe, Tap};
 
 use crate::{
-    default,
+    DataTable, RowViewer, UiAction, default,
     draw::tsv,
     viewer::{
         CellWriteContext, DecodeErrorBehavior, EmptyRowCreateContext, MoveDirection, RowCodec,
         UiActionContext, UiCursorState,
     },
-    DataTable, RowViewer, UiAction,
 };
 
-mod types;
-mod command;
-mod clipboard;
-mod selection;
 mod action;
-mod validation;
+mod clipboard;
+mod command;
 mod model_ops;
+mod selection;
+mod types;
+mod validation;
 
 #[cfg(test)]
 mod tests;
 
-pub(crate) use types::*;
 pub(crate) use command::Command;
 pub(crate) use model_ops::DataModelOps;
+pub(crate) use types::*;
 
 /// TODO: Serialization?
 pub(crate) struct UiState<R> {

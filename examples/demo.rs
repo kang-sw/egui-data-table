@@ -1,8 +1,8 @@
 use egui::scroll_area::ScrollBarVisibility;
 use egui::{Response, Sense, Widget};
 use egui_data_table::{
+    viewer::{default_hotkeys, CellWriteContext, DecodeErrorBehavior, RowCodec, UiActionContext},
     RowViewer,
-    viewer::{CellWriteContext, DecodeErrorBehavior, RowCodec, UiActionContext, default_hotkeys},
 };
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;

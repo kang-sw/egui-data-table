@@ -114,10 +114,7 @@ impl DataModelOps<TestRow> for MockViewer {
 }
 
 /// Helper: create a UiState with identity validated and cc validated.
-fn setup_state(
-    vwr: &mut MockViewer,
-    table: &mut DataTable<TestRow>,
-) -> UiState<TestRow> {
+fn setup_state(vwr: &mut MockViewer, table: &mut DataTable<TestRow>) -> UiState<TestRow> {
     let mut state = UiState::default();
     state.validate_identity(vwr);
     state.validate_cc(&mut table.rows, vwr);
@@ -248,10 +245,7 @@ mod command_tests {
     #[test]
     fn set_row_value_and_undo_redo() {
         let mut vwr = MockViewer::new(3);
-        let mut table = DataTable::from_iter(vec![
-            vec![1, 2, 3],
-            vec![4, 5, 6],
-        ]);
+        let mut table = DataTable::from_iter(vec![vec![1, 2, 3], vec![4, 5, 6]]);
         let mut state = setup_state(&mut vwr, &mut table);
 
         // Set row 0 to new value
@@ -277,10 +271,7 @@ mod command_tests {
     #[test]
     fn insert_rows_and_undo() {
         let mut vwr = MockViewer::new(2);
-        let mut table = DataTable::from_iter(vec![
-            vec![1, 2],
-            vec![3, 4],
-        ]);
+        let mut table = DataTable::from_iter(vec![vec![1, 2], vec![3, 4]]);
         let mut state = setup_state(&mut vwr, &mut table);
 
         state.push_new_command(
@@ -304,11 +295,7 @@ mod command_tests {
     #[test]
     fn remove_row_and_undo() {
         let mut vwr = MockViewer::new(2);
-        let mut table = DataTable::from_iter(vec![
-            vec![1, 2],
-            vec![3, 4],
-            vec![5, 6],
-        ]);
+        let mut table = DataTable::from_iter(vec![vec![1, 2], vec![3, 4], vec![5, 6]]);
         let mut state = setup_state(&mut vwr, &mut table);
 
         state.push_new_command(
@@ -398,11 +385,7 @@ mod command_tests {
     #[test]
     fn set_column_sort() {
         let mut vwr = MockViewer::new(3);
-        let mut table = DataTable::from_iter(vec![
-            vec![3, 1, 2],
-            vec![1, 3, 1],
-            vec![2, 2, 3],
-        ]);
+        let mut table = DataTable::from_iter(vec![vec![3, 1, 2], vec![1, 3, 1], vec![2, 2, 3]]);
         let mut state = setup_state(&mut vwr, &mut table);
 
         // Sort by column 0 ascending
@@ -454,9 +437,14 @@ mod command_tests {
 mod selection_tests {
     use super::*;
 
-    fn make_state_with_rows(ncol: usize, nrows: usize) -> (MockViewer, DataTable<TestRow>, UiState<TestRow>) {
+    fn make_state_with_rows(
+        ncol: usize,
+        nrows: usize,
+    ) -> (MockViewer, DataTable<TestRow>, UiState<TestRow>) {
         let mut vwr = MockViewer::new(ncol);
-        let rows: Vec<TestRow> = (0..nrows).map(|i| (0..ncol).map(|c| (i * ncol + c) as i32).collect()).collect();
+        let rows: Vec<TestRow> = (0..nrows)
+            .map(|i| (0..ncol).map(|c| (i * ncol + c) as i32).collect())
+            .collect();
         let mut table = DataTable::from_iter(rows);
         let state = setup_state(&mut vwr, &mut table);
         (vwr, table, state)
@@ -467,9 +455,7 @@ mod selection_tests {
         let (_, _, mut state) = make_state_with_rows(3, 5);
 
         // Set initial selection
-        state.cc_cursor = CursorState::Select(vec![
-            VisSelection(VisLinearIdx(0), VisLinearIdx(2)),
-        ]);
+        state.cc_cursor = CursorState::Select(vec![VisSelection(VisLinearIdx(0), VisLinearIdx(2))]);
 
         // Simulate mouse drag
         let idx = VisRowPos(2).linear_index(3, VisColumnPos(1));
@@ -488,9 +474,7 @@ mod selection_tests {
         let (_, _, mut state) = make_state_with_rows(3, 5);
 
         // Existing selection at row 0
-        state.cc_cursor = CursorState::Select(vec![
-            VisSelection(VisLinearIdx(0), VisLinearIdx(2)),
-        ]);
+        state.cc_cursor = CursorState::Select(vec![VisSelection(VisLinearIdx(0), VisLinearIdx(2))]);
 
         // Add new selection at row 2
         let idx = VisRowPos(2).linear_index(3, VisColumnPos(1));
@@ -509,9 +493,7 @@ mod selection_tests {
 
         // Existing selection at point (0,0)
         let point = VisLinearIdx(0);
-        state.cc_cursor = CursorState::Select(vec![
-            VisSelection(point, point),
-        ]);
+        state.cc_cursor = CursorState::Select(vec![VisSelection(point, point)]);
 
         // Click same point again with toggle
         state.cci_sel_update(point);
@@ -529,9 +511,7 @@ mod selection_tests {
 
         // Existing point selection at (0,0)
         let p0 = VisLinearIdx(0);
-        state.cc_cursor = CursorState::Select(vec![
-            VisSelection(p0, p0),
-        ]);
+        state.cc_cursor = CursorState::Select(vec![VisSelection(p0, p0)]);
 
         // Extend to (2,1)
         let p1 = VisRowPos(2).linear_index(3, VisColumnPos(1));
@@ -559,13 +539,11 @@ mod selection_tests {
         let (_, _, mut state) = make_state_with_rows(3, 5);
 
         // Select from (1,0) to (2,1)
-        state.cc_cursor = CursorState::Select(vec![
-            VisSelection::from_points(
-                3,
-                VisRowPos(1).linear_index(3, VisColumnPos(0)),
-                VisRowPos(2).linear_index(3, VisColumnPos(1)),
-            ),
-        ]);
+        state.cc_cursor = CursorState::Select(vec![VisSelection::from_points(
+            3,
+            VisRowPos(1).linear_index(3, VisColumnPos(0)),
+            VisRowPos(2).linear_index(3, VisColumnPos(1)),
+        )]);
 
         let cells = state.collect_selection();
         assert_eq!(cells.len(), 4); // 2 rows x 2 cols
@@ -579,13 +557,11 @@ mod selection_tests {
     fn collect_selected_rows() {
         let (_, _, mut state) = make_state_with_rows(4, 10);
 
-        state.cc_cursor = CursorState::Select(vec![
-            VisSelection::from_points(
-                4,
-                VisRowPos(2).linear_index(4, VisColumnPos(0)),
-                VisRowPos(4).linear_index(4, VisColumnPos(3)),
-            ),
-        ]);
+        state.cc_cursor = CursorState::Select(vec![VisSelection::from_points(
+            4,
+            VisRowPos(2).linear_index(4, VisColumnPos(0)),
+            VisRowPos(4).linear_index(4, VisColumnPos(3)),
+        )]);
 
         let rows = state.collect_selected_rows();
         assert_eq!(rows.len(), 3);
@@ -598,13 +574,11 @@ mod selection_tests {
     fn is_selected() {
         let (_, _, mut state) = make_state_with_rows(3, 5);
 
-        state.cc_cursor = CursorState::Select(vec![
-            VisSelection::from_points(
-                3,
-                VisRowPos(1).linear_index(3, VisColumnPos(1)),
-                VisRowPos(1).linear_index(3, VisColumnPos(1)),
-            ),
-        ]);
+        state.cc_cursor = CursorState::Select(vec![VisSelection::from_points(
+            3,
+            VisRowPos(1).linear_index(3, VisColumnPos(1)),
+            VisRowPos(1).linear_index(3, VisColumnPos(1)),
+        )]);
 
         assert!(state.is_selected(VisRowPos(1), VisColumnPos(1)));
         assert!(!state.is_selected(VisRowPos(0), VisColumnPos(0)));
@@ -653,11 +627,7 @@ mod validation_tests {
     #[test]
     fn validate_cc_applies_sort() {
         let mut vwr = MockViewer::new(2);
-        let mut table = DataTable::from_iter(vec![
-            vec![30, 1],
-            vec![10, 3],
-            vec![20, 2],
-        ]);
+        let mut table = DataTable::from_iter(vec![vec![30, 1], vec![10, 3], vec![20, 2]]);
         let mut state = setup_state(&mut vwr, &mut table);
 
         // Set sort by column 0 ascending
@@ -681,12 +651,8 @@ mod validation_tests {
         vwr.filter_fn = Some(Box::new(|row: &TestRow| row[0] > 10));
         vwr.filter_version = 1;
 
-        let mut table = DataTable::from_iter(vec![
-            vec![5, 1],
-            vec![15, 2],
-            vec![25, 3],
-            vec![3, 4],
-        ]);
+        let mut table =
+            DataTable::from_iter(vec![vec![5, 1], vec![15, 2], vec![25, 3], vec![3, 4]]);
         let state = setup_state(&mut vwr, &mut table);
 
         assert_eq!(state.cc_rows.len(), 2);
@@ -697,11 +663,7 @@ mod validation_tests {
     #[test]
     fn handle_desired_selection() {
         let mut vwr = MockViewer::new(3);
-        let mut table = DataTable::from_iter(vec![
-            vec![1, 2, 3],
-            vec![4, 5, 6],
-            vec![7, 8, 9],
-        ]);
+        let mut table = DataTable::from_iter(vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]]);
         let mut state = setup_state(&mut vwr, &mut table);
 
         // Queue desired selection for row 1 (full row)
@@ -733,10 +695,7 @@ mod action_tests {
     #[test]
     fn move_selection_boundaries() {
         let mut vwr = MockViewer::new(3);
-        let mut table = DataTable::from_iter(vec![
-            vec![1, 2, 3],
-            vec![4, 5, 6],
-        ]);
+        let mut table = DataTable::from_iter(vec![vec![1, 2, 3], vec![4, 5, 6]]);
         let state = setup_state(&mut vwr, &mut table);
 
         // Test moved_position at boundaries
@@ -762,10 +721,7 @@ mod action_tests {
     #[test]
     fn move_selection_wraps_right() {
         let mut vwr = MockViewer::new(3);
-        let mut table = DataTable::from_iter(vec![
-            vec![1, 2, 3],
-            vec![4, 5, 6],
-        ]);
+        let mut table = DataTable::from_iter(vec![vec![1, 2, 3], vec![4, 5, 6]]);
         let state = setup_state(&mut vwr, &mut table);
 
         // Moving right from (0, 2) wraps to (1, 0)
@@ -777,10 +733,7 @@ mod action_tests {
     #[test]
     fn move_selection_wraps_left() {
         let mut vwr = MockViewer::new(3);
-        let mut table = DataTable::from_iter(vec![
-            vec![1, 2, 3],
-            vec![4, 5, 6],
-        ]);
+        let mut table = DataTable::from_iter(vec![vec![1, 2, 3], vec![4, 5, 6]]);
         let state = setup_state(&mut vwr, &mut table);
 
         // Moving left from (1, 0) wraps to (0, 2)
@@ -792,10 +745,7 @@ mod action_tests {
     #[test]
     fn move_selection_bottom_right_corner() {
         let mut vwr = MockViewer::new(3);
-        let mut table = DataTable::from_iter(vec![
-            vec![1, 2, 3],
-            vec![4, 5, 6],
-        ]);
+        let mut table = DataTable::from_iter(vec![vec![1, 2, 3], vec![4, 5, 6]]);
         let state = setup_state(&mut vwr, &mut table);
 
         // Moving down from bottom row stays

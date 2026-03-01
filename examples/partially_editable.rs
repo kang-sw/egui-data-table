@@ -1,13 +1,13 @@
 //! Demonstrate the partially editable features.
-//! 
+//!
 //! Sometimes, some of the data you need to work with is not always editable, this example uses API features
 //! to prevent new rows being added/deleted and to prevent some cells from being edited/cleared or pasted into.
 //!
-//! See [`Viewer::is_editable_cell`], [`Viewer::allow_row_insertions`] and [`Viewer::allow_row_deletions`] 
+//! See [`Viewer::is_editable_cell`], [`Viewer::allow_row_insertions`] and [`Viewer::allow_row_deletions`]
 
-use std::borrow::Cow;
 use egui::{Response, Ui};
 use egui_data_table::RowViewer;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use tap::Tap;
 
@@ -149,7 +149,7 @@ impl RowViewer<PartStatesRow> for Viewer {
                         }
                     })
                     .collect::<Vec<String>>()
-                    .tap_mut(|processes|processes.sort());
+                    .tap_mut(|processes| processes.sort());
                 let label = processes.join(", ");
                 ui.label(label);
             }
@@ -212,17 +212,23 @@ impl eframe::App for DemoApp {
         });
 
         egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
-            egui::Sides::new().show(ui, |_ui| {
-            }, |ui|{
-                let mut has_modifications = self.table.has_user_modification();
-                ui.add_enabled(false, egui::Checkbox::new(&mut has_modifications, "Has modifications"));
+            egui::Sides::new().show(
+                ui,
+                |_ui| {},
+                |ui| {
+                    let mut has_modifications = self.table.has_user_modification();
+                    ui.add_enabled(
+                        false,
+                        egui::Checkbox::new(&mut has_modifications, "Has modifications"),
+                    );
 
-                ui.add_enabled_ui(has_modifications, |ui| {
-                    if ui.button("Clear").clicked() {
-                        self.table.clear_user_modification_flag();
-                    }
-                });
-            });
+                    ui.add_enabled_ui(has_modifications, |ui| {
+                        if ui.button("Clear").clicked() {
+                            self.table.clear_user_modification_flag();
+                        }
+                    });
+                },
+            );
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
