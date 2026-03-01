@@ -1,17 +1,17 @@
-use std::{borrow::Cow, iter::repeat_with};
+use egui::scroll_area::ScrollBarVisibility;
+use egui::{Response, Sense, Widget};
+use egui_data_table::{
+    RowViewer,
+    viewer::{CellWriteContext, DecodeErrorBehavior, RowCodec, UiActionContext, default_hotkeys},
+};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
-use egui::{Response, Sense, Widget};
-use egui::scroll_area::ScrollBarVisibility;
-use egui_data_table::{
-    viewer::{default_hotkeys, CellWriteContext, DecodeErrorBehavior, RowCodec, UiActionContext},
-    RowViewer,
-};
+use std::{borrow::Cow, iter::repeat_with};
 
 /* ----------------------------------------- Columns -------------------------------------------- */
 
 mod columns {
-    
+
     // column indices
     // columns can easily be reordered simply by changing the values of these indices.
     pub const NAME: usize = 0;
@@ -20,7 +20,7 @@ mod columns {
     pub const IS_STUDENT: usize = 3;
     pub const GRADE: usize = 4;
     pub const ROW_LOCKED: usize = 5;
-    
+
     /// count of columns
     pub const COLUMN_COUNT: usize = 6;
 
@@ -50,7 +50,7 @@ struct Row {
     gender: Option<Gender>,
     is_student: bool,
     grade: Grade,
-    row_locked: bool
+    row_locked: bool,
 }
 
 impl Default for Row {
@@ -61,7 +61,7 @@ impl Default for Row {
             gender: None,
             is_student: false,
             grade: Grade::F,
-            row_locked: false
+            row_locked: false,
         }
     }
 }
@@ -100,7 +100,7 @@ impl TryFrom<i32> for Grade {
             3 => Grade::D,
             4 => Grade::E,
             5 => Grade::F,
-            _ => return Err(())
+            _ => return Err(()),
         };
         Ok(value)
     }
@@ -139,7 +139,6 @@ impl Display for Gender {
     }
 }
 
-
 /* -------------------------------------------- Codec ------------------------------------------- */
 
 struct Codec;
@@ -154,6 +153,7 @@ impl RowCodec<Row> for Codec {
             IS_STUDENT => dst.push_str(&src_row.is_student.to_string()),
             GRADE => dst.push_str(src_row.grade.to_string().as_str()),
             ROW_LOCKED => dst.push_str(&src_row.row_locked.to_string()),
+            GENDER => (),
             _ => unreachable!(),
         }
     }
@@ -167,11 +167,16 @@ impl RowCodec<Row> for Codec {
         match column {
             NAME => dst_row.name.replace_range(.., src_data),
             AGE => dst_row.age = src_data.parse().map_err(|_| DecodeErrorBehavior::SkipRow)?,
-            IS_STUDENT => dst_row.is_student = src_data.parse().map_err(|_| DecodeErrorBehavior::SkipRow)?,
+            IS_STUDENT => {
+                dst_row.is_student = src_data.parse().map_err(|_| DecodeErrorBehavior::SkipRow)?
+            }
             GRADE => {
                 dst_row.grade = src_data.parse().map_err(|_| DecodeErrorBehavior::SkipRow)?;
             }
-            ROW_LOCKED => dst_row.row_locked = src_data.parse().map_err(|_| DecodeErrorBehavior::SkipRow)?,
+            ROW_LOCKED => {
+                dst_row.row_locked = src_data.parse().map_err(|_| DecodeErrorBehavior::SkipRow)?
+            }
+            GENDER => (),
             _ => unreachable!(),
         }
 
@@ -186,7 +191,6 @@ impl RowCodec<Row> for Codec {
 /* ------------------------------------ Viewer Implementation ----------------------------------- */
 
 impl RowViewer<Row> for Viewer {
-
     fn on_highlight_cell(&mut self, row: &Row, column: usize) {
         println!("cell highlighted: row: {:?}, column: {}", row, column);
     }
@@ -200,8 +204,7 @@ impl RowViewer<Row> for Viewer {
     }
 
     fn column_name(&mut self, column: usize) -> Cow<'static, str> {
-        COLUMN_NAMES[column]
-            .into()
+        COLUMN_NAMES[column].into()
     }
 
     fn is_sortable_column(&mut self, column: usize) -> bool {
@@ -271,7 +274,11 @@ impl RowViewer<Row> for Viewer {
         let _ = match column {
             NAME => ui.label(&row.name),
             AGE => ui.label(row.age.to_string()),
-            GENDER => ui.label(row.gender.map(|gender|gender.to_string()).unwrap_or("Unspecified".to_string())),
+            GENDER => ui.label(
+                row.gender
+                    .map(|gender| gender.to_string())
+                    .unwrap_or("Unspecified".to_string()),
+            ),
             IS_STUDENT => ui.checkbox(&mut { row.is_student }, ""),
             GRADE => ui.label(row.grade.to_string()),
             ROW_LOCKED => ui.checkbox(&mut { row.row_locked }, ""),
@@ -286,17 +293,16 @@ impl RowViewer<Row> for Viewer {
         _column: usize,
         resp: &egui::Response,
     ) -> Option<Box<Row>> {
-        resp.dnd_release_payload::<String>()
-            .map(|x| {
-                Box::new(Row{ 
-                    name: (*x).clone(), 
-                    age: 9999,
-                    gender: Some(Gender::Female),
-                    is_student: false,
-                    grade: Grade::A,
-                    row_locked: false
-                })
+        resp.dnd_release_payload::<String>().map(|x| {
+            Box::new(Row {
+                name: (*x).clone(),
+                age: 9999,
+                gender: Some(Gender::Female),
+                is_student: false,
+                grade: Grade::A,
+                row_locked: false,
             })
+        })
     }
 
     fn show_cell_editor(
@@ -316,14 +322,18 @@ impl RowViewer<Row> for Viewer {
             AGE => ui.add(egui::DragValue::new(&mut row.age).speed(1.0)),
             GENDER => {
                 let gender = &mut row.gender;
-                
+
                 egui::ComboBox::new(ui.id().with("gender"), "".to_string())
-                    .selected_text(gender.map(|gender|gender.to_string()).unwrap_or("Unspecified".to_string()))
-                    .show_ui(ui, |ui|{
+                    .selected_text(
+                        gender
+                            .map(|gender| gender.to_string())
+                            .unwrap_or("Unspecified".to_string()),
+                    )
+                    .show_ui(ui, |ui| {
                         if ui
                             .add(egui::Button::selectable(
                                 matches!(gender, Some(gender) if *gender == Gender::Male),
-                                "Male"
+                                "Male",
                             ))
                             .clicked()
                         {
@@ -332,14 +342,14 @@ impl RowViewer<Row> for Viewer {
                         if ui
                             .add(egui::Button::selectable(
                                 matches!(gender, Some(gender) if *gender == Gender::Female),
-                                "Female"
+                                "Female",
                             ))
                             .clicked()
                         {
                             *gender = Some(Gender::Female);
                         }
-
-                    }).response
+                    })
+                    .response
             }
             IS_STUDENT => ui.checkbox(&mut row.is_student, ""),
             GRADE => {
@@ -387,9 +397,12 @@ impl RowViewer<Row> for Viewer {
     }
 
     fn on_row_updated(&mut self, row_index: usize, new_row: &Row, old_row: &Row) {
-        println!("row updated. row_id: {}, new_row: {:?}, old_row: {:?}", row_index, new_row, old_row);
+        println!(
+            "row updated. row_id: {}, new_row: {:?}, old_row: {:?}",
+            row_index, new_row, old_row
+        );
     }
-    
+
     fn on_row_inserted(&mut self, row_index: usize, row: &Row) {
         println!("row inserted. row_id: {}, values: {:?}", row_index, row);
     }
@@ -415,20 +428,18 @@ impl Default for DemoApp {
                 let mut rng = fastrand::Rng::new();
                 let mut name_gen = names::Generator::with_naming(names::Name::Numbered);
 
-                repeat_with(move || {
-                    Row {
-                        name: name_gen.next().unwrap(),
-                        age: rng.i32(4..31),
-                        gender: match rng.i32(0..=2) {
-                            0 => None,
-                            1 => Some(Gender::Male),
-                            2 => Some(Gender::Female),
-                            _ => unreachable!(),
-                        },
-                        is_student: rng.bool(),
-                        grade: rng.i32(0..=5).try_into().unwrap_or(Grade::F),
-                        row_locked: false,
-                    }
+                repeat_with(move || Row {
+                    name: name_gen.next().unwrap(),
+                    age: rng.i32(4..31),
+                    gender: match rng.i32(0..=2) {
+                        0 => None,
+                        1 => Some(Gender::Male),
+                        2 => Some(Gender::Female),
+                        _ => unreachable!(),
+                    },
+                    is_student: rng.bool(),
+                    grade: rng.i32(0..=5).try_into().unwrap_or(Grade::F),
+                    row_locked: false,
                 })
             }
             .take(100000)
@@ -493,14 +504,8 @@ impl eframe::App for DemoApp {
                     )
                     .on_hover_text("If checked, cells will be edited with a single click.");
 
-                    ui.checkbox(
-                        &mut self.style_override.auto_shrink.x,
-                        "Auto-shrink X",
-                    );
-                    ui.checkbox(
-                        &mut self.style_override.auto_shrink.y,
-                        "Auto-shrink Y",
-                    );
+                    ui.checkbox(&mut self.style_override.auto_shrink.x, "Auto-shrink X");
+                    ui.checkbox(&mut self.style_override.auto_shrink.y, "Auto-shrink Y");
 
                     ui.checkbox(
                         &mut self.scroll_bar_always_visible,
@@ -515,19 +520,25 @@ impl eframe::App for DemoApp {
         });
 
         egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
-            egui::Sides::new().show(ui, |_ui| {
-            }, |ui|{
-                let mut has_modifications = self.table.has_user_modification();
-                ui.add_enabled(false, egui::Checkbox::new(&mut has_modifications, "Has modifications"));
+            egui::Sides::new().show(
+                ui,
+                |_ui| {},
+                |ui| {
+                    let mut has_modifications = self.table.has_user_modification();
+                    ui.add_enabled(
+                        false,
+                        egui::Checkbox::new(&mut has_modifications, "Has modifications"),
+                    );
 
-                ui.add_enabled_ui(has_modifications, |ui| {
-                    if ui.button("Clear").clicked() {
-                        self.table.clear_user_modification_flag();
-                    }
-                });
-            });
+                    ui.add_enabled_ui(has_modifications, |ui| {
+                        if ui.button("Clear").clicked() {
+                            self.table.clear_user_modification_flag();
+                        }
+                    });
+                },
+            );
         });
-        
+
         egui::SidePanel::left("Hotkeys")
             .default_width(500.)
             .show(ctx, |ui| {
@@ -551,10 +562,11 @@ impl eframe::App for DemoApp {
                 true => {
                     ui.style_mut().spacing.scroll = egui::style::ScrollStyle::solid();
                     self.style_override.scroll_bar_visibility = ScrollBarVisibility::AlwaysVisible;
-                },
+                }
                 false => {
                     ui.style_mut().spacing.scroll = egui::style::ScrollStyle::floating();
-                    self.style_override.scroll_bar_visibility = ScrollBarVisibility::VisibleWhenNeeded;
+                    self.style_override.scroll_bar_visibility =
+                        ScrollBarVisibility::VisibleWhenNeeded;
                 }
             };
 
