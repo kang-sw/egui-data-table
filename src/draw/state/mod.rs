@@ -4,7 +4,6 @@ use std::{
     mem::{replace, take},
 };
 use std::collections::{HashMap, HashSet};
-use egui::Modifiers;
 use itertools::Itertools;
 use tap::prelude::{Pipe, Tap};
 

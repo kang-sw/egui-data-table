@@ -503,8 +503,19 @@ impl<R, V: RowViewer<R>> Renderer<'_, R, V> {
         /* ----------------------------------- Event Handling ----------------------------------- */
 
         if ctx.input(|i| i.pointer.button_released(PointerButton::Primary)) {
-            let mods = ctx.input(|i| i.modifiers);
-            if let Some(sel) = s.cci_take_selection(mods).filter(|_| !edit_started) {
+            let modifier = ctx.input(|i| {
+                let m = i.modifiers;
+                if m.is_none() {
+                    SelectionModifier::None
+                } else if m.command_only() {
+                    SelectionModifier::Toggle
+                } else if m.shift_only() {
+                    SelectionModifier::Extend
+                } else {
+                    SelectionModifier::None
+                }
+            });
+            if let Some(sel) = s.cci_take_selection(modifier).filter(|_| !edit_started) {
                 commands.push(Command::CcSetSelection(sel));
             }
         }

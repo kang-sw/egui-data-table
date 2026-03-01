@@ -43,14 +43,17 @@ impl<R> UiState<R> {
         self.cci_selection.is_some()
     }
 
-    pub fn cci_take_selection(&mut self, mods: egui::Modifiers) -> Option<Vec<VisSelection>> {
+    pub fn cci_take_selection(
+        &mut self,
+        modifier: SelectionModifier,
+    ) -> Option<Vec<VisSelection>> {
         let ncol = self.p.vis_cols.len();
         let cci_sel = self
             .cci_selection
             .take()
             .map(|(_0, _1)| VisSelection::from_points(ncol, _0, _1))?;
 
-        if mods.is_none() {
+        if modifier == SelectionModifier::None {
             return Some(vec![cci_sel]);
         }
 
@@ -61,7 +64,7 @@ impl<R> UiState<R> {
             return Some(sel);
         }
 
-        if mods.command_only() {
+        if modifier == SelectionModifier::Toggle {
             if let Some(idx) = idx_contains {
                 sel.remove(idx);
             } else {
@@ -69,7 +72,7 @@ impl<R> UiState<R> {
             }
         }
 
-        if mods.cmd_ctrl_matches(Modifiers::SHIFT) {
+        if modifier == SelectionModifier::Extend {
             let last = sel.last_mut().unwrap();
             if cci_sel.is_point() && last.is_point() {
                 *last = last.union(ncol, cci_sel);

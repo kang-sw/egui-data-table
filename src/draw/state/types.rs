@@ -110,3 +110,10 @@ impl VisRowPos {
         VisLinearIdx(self.0 * ncol + col.0)
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SelectionModifier {
+    None,
+    Toggle,
+    Extend,
+}
