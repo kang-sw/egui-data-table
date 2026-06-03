@@ -68,6 +68,7 @@ impl egui_data_table::RowViewer<MyRowData> for MyRowViewer {
                     .code_editor()
                     .show(ui)
                     .response
+                    .response
             }
             2 => ui.checkbox(&mut row.2, ""),
             _ => unreachable!()
