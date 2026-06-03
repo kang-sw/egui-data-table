@@ -200,8 +200,8 @@ impl RowViewer<PartStatesRow> for Viewer {
 }
 
 impl eframe::App for DemoApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::TopBottomPanel::top("menubar").show(ctx, |ui| {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        egui::Panel::top("menubar").show_inside(ui, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.checkbox(
                     &mut self.viewer.enable_row_insertion,
@@ -211,7 +211,7 @@ impl eframe::App for DemoApp {
             });
         });
 
-        egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
+        egui::Panel::bottom("bottom_panel").show_inside(ui, |ui| {
             egui::Sides::new().show(
                 ui,
                 |_ui| {},
@@ -231,7 +231,7 @@ impl eframe::App for DemoApp {
             );
         });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default_margins().show_inside(ui, |ui| {
             ui.add(egui_data_table::Renderer::new(
                 &mut self.table,
                 &mut self.viewer,
@@ -242,10 +242,9 @@ impl eframe::App for DemoApp {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
-    use eframe::App;
     env_logger::init();
 
-    eframe::run_simple_native(
+    eframe::run_ui_native(
         "Partially editable demo",
         eframe::NativeOptions {
             centered: true,
@@ -253,8 +252,8 @@ fn main() {
         },
         {
             let mut app = DemoApp::default();
-            move |ctx, frame| {
-                app.update(ctx, frame);
+            move |ui, frame| {
+                eframe::App::ui(&mut app, ui, frame);
             }
         },
     )
