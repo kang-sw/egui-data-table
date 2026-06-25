@@ -347,6 +347,7 @@ impl RowViewer<Row> for Viewer {
                     .code_editor()
                     .show(ui)
                     .response
+                    .response
             }
             AGE => ui.add(egui::DragValue::new(&mut row.age).speed(1.0)),
             GENDER => {
@@ -487,14 +488,16 @@ impl Default for DemoApp {
 }
 
 impl eframe::App for DemoApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+
         fn is_send<T: Send>(_: &T) {}
         fn is_sync<T: Sync>(_: &T) {}
 
         is_send(&self.table);
         is_sync(&self.table);
 
-        egui::TopBottomPanel::top("MenuBar").show(ctx, |ui| {
+        egui::Panel::top("MenuBar").show_inside(ui, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.hyperlink_to(
                     " kang-sw/egui-data-table",
@@ -550,7 +553,7 @@ impl eframe::App for DemoApp {
             })
         });
 
-        egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
+        egui::Panel::bottom("bottom_panel").show_inside(ui, |ui| {
             egui::Sides::new().show(
                 ui,
                 |_ui| {},
@@ -570,9 +573,9 @@ impl eframe::App for DemoApp {
             );
         });
 
-        egui::SidePanel::left("Hotkeys")
-            .default_width(500.)
-            .show(ctx, |ui| {
+        egui::Panel::left("Hotkeys")
+            .default_size(500.)
+            .show_inside(ui, |ui| {
                 ui.vertical_centered_justified(|ui| {
                     ui.heading("Hotkeys");
                     ui.separator();
@@ -588,7 +591,7 @@ impl eframe::App for DemoApp {
                 });
             });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
             match self.scroll_bar_always_visible {
                 true => {
                     ui.style_mut().spacing.scroll = egui::style::ScrollStyle::solid();
@@ -616,7 +619,7 @@ fn main() {
     use eframe::App;
     env_logger::init();
 
-    eframe::run_simple_native(
+    eframe::run_ui_native(
         "Spreadsheet Demo",
         eframe::NativeOptions {
             centered: true,
@@ -624,8 +627,8 @@ fn main() {
         },
         {
             let mut app = DemoApp::default();
-            move |ctx, frame| {
-                app.update(ctx, frame);
+            move |ui, frame| {
+                app.ui(ui, frame);
             }
         },
     )

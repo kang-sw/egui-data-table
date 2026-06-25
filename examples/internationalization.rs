@@ -176,7 +176,12 @@ impl RowViewer<Row> for Viewer {
 
     fn show_cell_editor(&mut self, ui: &mut Ui, row: &mut Row, column: usize) -> Option<Response> {
         match column {
-            0 => egui::TextEdit::singleline(&mut row.0).show(ui).response,
+            0 => {
+                egui::TextEdit::singleline(&mut row.0)
+                    .show(ui)
+                    .response
+                    .response
+            }
             1 => ui.add(egui::DragValue::new(&mut row.1).speed(1.0)),
             2 => ui.checkbox(&mut row.2, ""),
             _ => unreachable!(),
@@ -199,13 +204,13 @@ impl RowViewer<Row> for Viewer {
 }
 
 impl eframe::App for DemoApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let mut language_keys: Vec<&str> = self.translators.keys().copied().collect();
         language_keys.sort();
 
         let translator = self.translators[&self.selected_language_key.as_str()].clone();
 
-        egui::TopBottomPanel::top("menubar").show(ctx, |ui| {
+        egui::Panel::top("menubar").show_inside(ui, |ui| {
             ComboBox::from_label(translator.translate("language"))
                 .selected_text(translator.translate(&self.selected_language_key))
                 .show_ui(ui, |ui| {
@@ -223,7 +228,7 @@ impl eframe::App for DemoApp {
                     }
                 });
         });
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
             let renderer = egui_data_table::Renderer::new(&mut self.table, &mut self.viewer)
                 .with_translator(translator);
 
@@ -237,7 +242,7 @@ fn main() {
     use eframe::App;
     env_logger::init();
 
-    eframe::run_simple_native(
+    eframe::run_ui_native(
         "Translator demo",
         eframe::NativeOptions {
             centered: true,
@@ -245,8 +250,8 @@ fn main() {
         },
         {
             let mut app = DemoApp::default();
-            move |ctx, frame| {
-                app.update(ctx, frame);
+            move |ui, frame| {
+                app.ui(ui, frame);
             }
         },
     )
