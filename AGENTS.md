@@ -7,7 +7,6 @@ Read at every session start, before other action:
 1. **Preamble** - read `ai-docs/_index.md`; keep only context a session must not re-derive.
 2. **Local** - read `ai-docs/_index.local.md` if present; it is .gitignored machine context.
 3. **Project arc** - run `git log --oneline --graph -50`.
-4. **Recent history** - run `git log -10` for `## AI Context` rationale.
 
 ## Response Discipline
 
@@ -75,7 +74,6 @@ When a spec heading `{#slug}` changes, include `renamed-spec: <old-stem> -> <new
 - Workflow shape and plugin-less maintenance guidance live in `ai-docs/WORKFLOW.md`; it is explanatory and does not override ws runtime or MCP parser behavior.
 - Before creating or editing tickets, load the write-ticket workflow skill for conventions.
 - Reference tickets by stem only, never full path; stems survive status moves.
-- Check `## Ticket Focus` in `ai-docs/_index.md` before starting implementation; it may include non-ready attention items, but only `ready/` entries are direct implementation targets.
 - To check ticket completion or prior phase results, use `git log --grep=<ticket-stem>` and inspect `## Ticket Updates`.
 - Claude Code compatibility is `CLAUDE.md` containing `@AGENTS.md`.
 - **Language:** AI-authored docs, plans, commits, tickets, and code comments are English. Human-facing UI strings are exempt.
@@ -85,4 +83,4 @@ When a spec heading `{#slug}` changes, include `renamed-spec: <old-stem> -> <new
      `ai-docs/mental-model/<domain>.md ## Domain Rules` via `ws:lead-add-rule`.
      Context goes in `_index.md`; process goes in skills. -->
 
-<!-- Template Version: v0041 -->
+<!-- Template Version: v0045 -->
