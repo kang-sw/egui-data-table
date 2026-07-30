@@ -59,7 +59,9 @@ No active tickets yet.
 
 ## Session Notes
 
-- Bootstrapped `AGENTS.md`-based ws workflow context from the prior `CLAUDE.md`.
-- Specs and mental models have not been forged yet; use `ws:lead-forge-spec`
-  and `ws:lead-forge-mental-model` when durable behavioral or modification
-  baselines are needed.
+- Spec and mental-model baselines are both forged; start from
+  `ai-docs/mental-model.md`'s reading map rather than re-deriving structure.
+- `cargo test` currently fails on the `README.md` doctest only (egui 0.34
+  `TextEdit::show` returns `AtomLayoutResponse`); library unit tests pass.
+- `cargo check --example demo --no-default-features` fails: `demo.rs` implements
+  `persist_ui_state` without the `persistency` cfg guard.
