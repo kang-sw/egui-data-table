@@ -3,8 +3,6 @@
 
 # Data table UI implementation for egui
 
-MSRV is 1.75, with RPITIT
-
 [Demo Web Page](https://kang-sw.github.io/egui-data-table/)
 
 # Features
@@ -67,6 +65,7 @@ impl egui_data_table::RowViewer<MyRowData> for MyRowViewer {
                     .desired_rows(1)
                     .code_editor()
                     .show(ui)
+                    .response
                     .response
             }
             2 => ui.checkbox(&mut row.2, ""),

@@ -47,7 +47,7 @@ and this project adheres to [Semantic Versioning].
 ### Changed
 
 - Bump `egui` dependency to 0.32.
-- Bump Rust edition to 2024 (egui requires Rust 1.85).
+- Bump Rust edition to 2024.
 
 ### Fixed
 
