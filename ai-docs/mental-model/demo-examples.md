@@ -6,7 +6,7 @@ sources:
   - demo/
 related:
   viewer-contract: "examples/demo.rs is the reference implementation for nearly every RowViewer hook"
-  public-api: "the README example is compiled as a doctest and is currently broken"
+  public-api: "the README example is compiled as a doctest"
   persistence: "demo.rs implements persist_ui_state without a cfg guard"
 ---
 
@@ -71,11 +71,6 @@ updated when a `RowViewer` hook changes:
 
 ## Common Mistakes
 
-- Trusting `cargo test`. It currently **fails**, and not because of your change:
-  the README minimal example still calls `TextEdit::show(ui).response`, which
-  under egui 0.34 yields `AtomLayoutResponse` where a `Response` is expected.
-  `examples/demo.rs:345-350` already uses the correct double-`.response` form.
-  Library unit tests pass; only the doctest fails.
 - Running `trunk build` from the repo root without `--dist demo/dist` — output
   lands in `/dist`, which `.gitignore` does not cover (only `/demo/dist` is
   ignored).
@@ -89,7 +84,6 @@ updated when a `RowViewer` hook changes:
   `#[cfg(feature = "persistency")]`, so `cargo check --example demo
   --no-default-features` fails with E0407. No CI job runs that combination, so it
   stays latent.
-- The README doctest is broken against the pinned egui version.
 - `pages.yml`'s path filter covers `demo/**`, `examples/**` and `src/**` but not
   the manifests, so a dependency-only bump does not redeploy the demo.
 - `Cargo.lock` is gitignored, so neither the published crate nor the demo build

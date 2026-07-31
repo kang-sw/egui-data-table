@@ -1,7 +1,11 @@
 name: Cargo Publish
 
 on:
-  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -12,9 +16,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build
-      - run: cargo test
-      - run: cargo login ${{ secrets.CRATES_IO_TOKEN }}
-      - run: cargo publish
-        
-        
+      - name: Verify release tag matches package version
+        run: |
+          version="$(cargo metadata --no-deps --format-version=1 | jq -r '.packages[] | select(.name == "egui-data-table") | .version')"
+          test "$GITHUB_REF_NAME" = "v$version"
+      - run: cargo build -p egui-data-table --all-targets
+      - run: cargo test -p egui-data-table --all-targets
+      - run: cargo test -p egui-data-table --doc
+      - run: cargo package -p egui-data-table
+      - run: cargo publish -p egui-data-table --dry-run
+      - run: cargo publish -p egui-data-table
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}

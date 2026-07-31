@@ -14,25 +14,36 @@
   manifest, and VCS metadata automatically.
 - Commit the version and package-boundary changes before creating the tag.
 
-## Pre-flight
+## Optional Local Validation
+
+These non-publishing checks are optional confidence checks before pushing the
+release tag. Tag-triggered CI is authoritative for the required release
+validation and publication.
 
 - `cargo fmt --all --check`
-- `cargo check -p egui-data-table --all-targets --locked`
-- `cargo test -p egui-data-table --all-targets --locked`
-- `cargo test -p egui-data-table --doc --locked`
-- `cargo +1.92 check -p egui-data-table --all-targets --locked`
-- `cargo +1.92 test -p egui-data-table --doc --locked`
+- `cargo check -p egui-data-table --all-targets`
+- `cargo test -p egui-data-table --all-targets`
+- `cargo test -p egui-data-table --doc`
+- `cargo +1.92 check -p egui-data-table --all-targets`
+- `cargo +1.92 test -p egui-data-table --doc`
 
-## Build
+## Optional Local Package Validation
 
-- `cargo package -p egui-data-table --locked`
-- `cargo publish -p egui-data-table --dry-run --locked`
+- `cargo package -p egui-data-table`
+- `cargo publish -p egui-data-table --dry-run`
 
 ## Publish
 
-- `cargo publish -p egui-data-table --locked`
+CI owns publication. After a matching `v<version>` tag is pushed, the publish
+workflow verifies that the tag matches the root package version, builds and
+tests the root crate (including its doctest), packages it, and performs a dry
+run before publishing `egui-data-table` to crates.io.
 
 ## Tag
 
 Format: `v<version>`
-Push: yes
+
+Release order: prepare and commit the version/package-boundary changes, then
+optionally run the local validation above and push the matching tag. The
+tag-triggered CI workflow performs the required validation and publication; do
+not publish locally.
