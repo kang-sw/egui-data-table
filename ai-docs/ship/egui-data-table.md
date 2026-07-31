@@ -31,9 +31,9 @@
 ## Publish
 
 CI owns publication. After a matching `v<version>` tag is pushed, the publish
-workflow verifies that the tag matches the root package version, runs the root
-crate checks above, packages the root crate, and performs a dry run before
-publishing `egui-data-table` to crates.io.
+workflow verifies that the tag matches the root package version, builds and
+tests the root crate (including its doctest), packages it, and performs a dry
+run before publishing `egui-data-table` to crates.io.
 
 ## Tag
 
