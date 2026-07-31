@@ -2,6 +2,7 @@
 name = "egui-data-table"
 version = "0.10.0"
 edition = "2024"
+rust-version.workspace = true
 repository = "https://github.com/kang-sw/egui-data-table"
 authors = ["kang-sw"]
 description = "A generic data table widget implmentation for egui"
@@ -12,9 +13,12 @@ license-file = "LICENSE"
 [workspace]
 members = ["demo"]
 
+[workspace.package]
+rust-version = "1.92"
+
 [dependencies]
-egui = "0.34"
-egui_extras = { version = "0.34", default-features = false, features = [
+egui = "0.35"
+egui_extras = { version = "0.35", default-features = false, features = [
     "serde",
 ] }
 tap = "1"
@@ -23,7 +27,7 @@ serde = { version = "1", optional = true, features = ["derive"] }
 thiserror = "2"
 
 [dev-dependencies]
-eframe = { version = "0.34", features = ["serde", "persistence"] }
+eframe = { version = "0.35", features = ["serde", "persistence"] }
 fastrand = "2"
 names = { version = "0.14", default-features = false }
 log = "0.4"

@@ -193,7 +193,7 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
 
         builder
             .columns(Column::auto(), s.num_columns() - s.vis_cols().len())
-            .drag_to_scroll(false) // Drag is used for selection;
+            .drag_to_scroll(egui::scroll_area::DragScroll::Never) // Drag is used for selection;
             .striped(true)
             .cell_layout(egui::Layout::default().with_cross_align(self.style.cell_align))
             .max_scroll_height(f32::MAX)
