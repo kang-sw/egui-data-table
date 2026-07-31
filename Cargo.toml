@@ -1,6 +1,6 @@
 [package]
 name = "egui-data-table"
-version = "0.10.0"
+version = "0.11.0"
 edition = "2024"
 rust-version.workspace = true
 repository = "https://github.com/kang-sw/egui-data-table"
@@ -8,6 +8,7 @@ authors = ["kang-sw"]
 description = "A generic data table widget implmentation for egui"
 categories = ["gui"]
 license-file = "LICENSE"
+include = ["/src/**", "/examples/**", "/README.md"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [workspace]
